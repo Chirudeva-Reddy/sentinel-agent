@@ -28,7 +28,8 @@ class Detector(Protocol):
 
 
 def load_detectors(policy: PolicyEngine) -> list[Detector]:
-    eps = sorted(entry_points(group=GROUP), key=lambda ep: ep.name)
+    # Dedupe by (name, target): stale metadata from an old install would otherwise double-count a detector.
+    eps = sorted({(ep.name, ep.value): ep for ep in entry_points(group=GROUP)}.values(), key=lambda ep: ep.name)
     if not eps:
         # Fail closed: a gateway with no detectors would allow everything.
         raise RuntimeError(f"No detectors registered under '{GROUP}'. Is sentinel-agent-gateway installed?")
