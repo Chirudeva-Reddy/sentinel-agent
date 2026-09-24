@@ -15,7 +15,15 @@
 pip install sentinel-agent-gateway
 ```
 
-[Architecture](https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/ARCHITECTURE.md)
+[Architecture](https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/ARCHITECTURE.md) &bull; [Full Trailer Suite](launch/trailer_player.html)
+
+<br/>
+
+<a href="https://chirudeva-reddy.github.io/sentinel-agent/">
+  <img src="assets/sentinel_demo_20s.gif" alt="SentinelAgent 20-Second Overview Demo" width="850">
+</a>
+
+<sub><em>20-Second Demo: Indirect Prompt Injection &rarr; 0.06ms Intercept &rarr; Human Approval &rarr; HMAC Audit Chain &bull; <a href="assets/sentinel_demo_20s.mp4">Download MP4</a></em></sub>
 
 </div>
 
