@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sentinel.core.gateway import _RANK, SentinelGateway
+from sentinel.core.gateway import DECISION_RANK, SentinelGateway
 from sentinel.core.types import DecisionAction
 from tests.corpus import cases, to_request
 
@@ -16,7 +16,7 @@ def test_benign_false_positive_rate():
     for c in corpus:
         got = gw.inspect(to_request(c)).decision
         expect = DecisionAction(c.get("expect", "ALLOW"))
-        if _RANK[got] > _RANK[expect]:
+        if DECISION_RANK[got] > DECISION_RANK[expect]:
             fps.append(f"{c['id']}: expected {expect.value}, got {got.value}")
     assert len(corpus) >= 50
     assert len(fps) / len(corpus) <= MAX_FP_RATE, "\n".join(fps)
