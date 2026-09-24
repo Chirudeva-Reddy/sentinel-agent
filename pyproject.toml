@@ -1,12 +1,19 @@
 [project]
-name = "sentinel-agent"
-version = "0.1.0"
-description = "Zero-Trust Security Gateway & Human-in-the-Loop Sandbox for Autonomous AI Agents"
+name = "sentinel-agent-gateway"
+version = "0.2.0"
+description = "Deny-by-default security gateway, human-approval sandbox and MCP proxy for AI agents"
 readme = "README.md"
 authors = [
     { name = "Chirudeva Reddy", email = "chirudevareddy03@gmail.com" }
 ]
 requires-python = ">=3.10"
+license = "Apache-2.0"
+keywords = ["ai-agents", "llm-security", "prompt-injection", "mcp", "guardrails"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Intended Audience :: Developers",
+]
 dependencies = [
     "pydantic>=2.7.0",
     "typer>=0.12.0",
@@ -41,6 +48,10 @@ dev = [
     "pip-audit>=2.7.0",
     "ruff>=0.4.0",
 ]
+
+[project.urls]
+Homepage = "https://chirudeva-reddy.github.io/sentinel-agent/"
+Repository = "https://github.com/Chirudeva-Reddy/sentinel-agent"
 
 [project.scripts]
 sentinel = "sentinel.cli:app"

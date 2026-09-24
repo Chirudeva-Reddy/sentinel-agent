@@ -4,9 +4,12 @@
 
 **A deny-by-default security gateway, human-approval sandbox and MCP proxy for AI agents**
 
+[![PyPI](https://img.shields.io/pypi/v/sentinel-agent-gateway.svg)](https://pypi.org/project/sentinel-agent-gateway/)
 [![CI](https://github.com/Chirudeva-Reddy/sentinel-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Chirudeva-Reddy/sentinel-agent/actions)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.14-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+**[Live demo: runs in your browser](https://chirudeva-reddy.github.io/sentinel-agent/)** · `pip install sentinel-agent-gateway`
 
 [Why](#why) • [Quickstart](#quickstart) • [How it works](#how-it-works) • [Evaluation](#evaluation) • [Architecture](docs/ARCHITECTURE.md)
 
@@ -40,8 +43,8 @@ between the agent and its tools and checks **both directions**:
 ## Quickstart
 
 ```bash
-git clone https://github.com/Chirudeva-Reddy/sentinel-agent.git && cd sentinel-agent
-uv sync --all-extras          # or: pip install -e ".[server,dashboard,mcp]"
+pip install "sentinel-agent-gateway[server,dashboard,mcp,demo]"   # the import name is `sentinel`
+# or from source: git clone https://github.com/Chirudeva-Reddy/sentinel-agent.git && cd sentinel-agent && uv sync --all-extras
 ```
 
 ```bash

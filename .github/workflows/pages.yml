@@ -1,0 +1,39 @@
+name: Pages
+
+# The site runs the wheel built from this commit in the browser (Pyodide), so it always matches main.
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Build wheel and assemble site
+        run: |
+          uv build --wheel --out-dir dist
+          mkdir -p _site/wheels
+          cp site/index.html _site/
+          cp dist/*.whl _site/wheels/
+          (cd dist && ls *.whl) > _site/wheels/latest.txt
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
