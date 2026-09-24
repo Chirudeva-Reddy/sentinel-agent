@@ -5,9 +5,11 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
-from typing import Any
+from importlib.resources import files
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RiskTier(str, Enum):
@@ -93,50 +95,43 @@ class AuditRecord(BaseModel):
     payload: dict[str, Any]
 
 
-class PolicyConfig(BaseModel):
-    """Configurable security policy for SentinelAgent gateway."""
+def _default_policy() -> dict[str, Any]:
+    data: dict[str, Any] = yaml.safe_load(files("sentinel.policies").joinpath("default.yaml").read_text("utf-8"))
+    return data
 
-    safe_threshold: float = 30.0
-    critical_threshold: float = 70.0
-    unknown_tool_action: DecisionAction = DecisionAction.REQUIRE_APPROVAL
+
+class PolicyConfig(BaseModel):
+    """Security policy. Defaults come from sentinel/policies/default.yaml (the single source of truth);
+    keys missing from a custom policy fall back to it, unknown keys are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    safe_threshold: float = Field(ge=0, le=100)
+    critical_threshold: float = Field(ge=0, le=100)
+    aggregation: Literal["noisy_or", "max"]
+    detector_budget_ms: float = Field(gt=0)
+    unknown_tool_action: DecisionAction
     """Decision floor for tools not listed in allowed/require_approval/blocked. Never ALLOW (deny by default)."""
-    allowed_hosts: list[str] = Field(default_factory=list)
+    allowed_hosts: list[str]
     """Hostnames/IPs exempt from SSRF checks, e.g. ["localhost"] for a dev policy."""
-    allowed_tools: list[str] = Field(default_factory=list)
-    blocked_tools: list[str] = Field(default_factory=list)
-    require_approval_tools: list[str] = Field(
-        default_factory=lambda: [
-            "execute_bash",
-            "shell",
-            "run_command",
-            "terminal",
-            "delete_file",
-            "drop_database",
-            "make_payment",
-            "send_email",
-        ]
-    )
-    sensitive_paths: list[str] = Field(
-        default_factory=lambda: [
-            "/etc",
-            "~/.ssh",
-            "~/.aws",
-            ".env",
-            "id_rsa",
-            "id_ed25519",
-            "/var/run/docker.sock",
-        ]
-    )
-    blocked_commands: list[str] = Field(
-        default_factory=lambda: [
-            "rm -rf /",
-            "rm -rf *",
-            "mkfs",
-            "dd if=",
-            ":(){ :|:& };:",
-            "chmod -R 777 /",
-            "wget http",
-            "curl http://",
-            "nc -e",
-        ]
-    )
+    allowed_tools: list[str]
+    blocked_tools: list[str]
+    require_approval_tools: list[str]
+    sensitive_paths: list[str]
+    blocked_commands: list[str]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _inherit_defaults(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {**_default_policy(), **data}
+        return data
+
+    @model_validator(mode="after")
+    def _check(self) -> PolicyConfig:
+        if self.safe_threshold >= self.critical_threshold:
+            raise ValueError("safe_threshold must be below critical_threshold")
+        if self.unknown_tool_action not in (DecisionAction.REQUIRE_APPROVAL, DecisionAction.BLOCK):
+            raise ValueError("unknown_tool_action must be REQUIRE_APPROVAL or BLOCK (deny by default)")
+        return self

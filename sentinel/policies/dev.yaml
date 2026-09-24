@@ -1,0 +1,3 @@
+# Local development: talk to your own dev servers. Everything else inherits default.yaml.
+version: "1.0-dev"
+allowed_hosts: ["localhost", "127.0.0.1", "::1"]

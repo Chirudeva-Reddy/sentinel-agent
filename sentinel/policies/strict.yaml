@@ -1,0 +1,5 @@
+# Production agents: unknown tools are blocked outright and warnings escalate sooner.
+version: "1.0-strict"
+unknown_tool_action: "BLOCK"
+safe_threshold: 20.0
+critical_threshold: 60.0
