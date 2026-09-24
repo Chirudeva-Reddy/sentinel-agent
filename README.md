@@ -2,183 +2,123 @@
 
 # 🛡️ SentinelAgent
 
-**Zero-Trust Security Gateway & Human-in-the-Loop Sandbox for Autonomous AI Agents**
+**A deny-by-default security gateway, human-approval sandbox and MCP proxy for AI agents**
 
 [![CI](https://github.com/Chirudeva-Reddy/sentinel-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Chirudeva-Reddy/sentinel-agent/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-37%20passed%20%7C%20100%25-brightgreen.svg)](https://github.com/Chirudeva-Reddy/sentinel-agent)
-[![Latency](https://img.shields.io/badge/latency-%3C%200.1ms-orange.svg)](docs/BENCHMARKS.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-*A drop-in proxy and governance middleware that protects autonomous AI agents from indirect prompt injection, malicious tool misuse, SSRF, path traversal, and catastrophic system damage.*
-
-[Features](#key-features) • [Quickstart](#quickstart) • [Architecture](#architecture) • [Benchmarks](#benchmarks) • [Resume Highlights](#resume-highlights-for-engineers)
+[Why](#why) • [Quickstart](#quickstart) • [How it works](#how-it-works) • [Evaluation](#evaluation) • [Architecture](docs/ARCHITECTURE.md)
 
 </div>
 
 ---
 
-## 💡 Why SentinelAgent?
+## Why
 
-In 2026, the biggest hurdle in deploying autonomous AI agents to enterprise production is **not reasoning ability—it is security and governance**.
+An agent with shell, database, email and browser tools can be steered by anything it reads. SentinelAgent sits
+between the agent and its tools and checks **both directions**:
 
-When agents are granted autonomy to execute shell commands, query databases, read local files, and browse the web, they become immediate targets for:
-1. **Indirect Prompt Injections (IPI)**: Adversarial websites or documents containing hidden instructions that hijack the agent's plan.
-2. **Catastrophic Blast Radius**: Agents hallucinating wildcard arguments (e.g. `rm -rf /`, `DROP TABLE`) or tampering with sensitive system files (`.env`, `~/.ssh/id_rsa`).
-3. **Parameter Exploits**: Command chaining (`;`, `|`, `$(...)`), Path Traversal (`../../etc/shadow`), and Cloud Metadata SSRF (`169.254.169.254`).
+- **Calls going out.** Each tool call is normalized (Unicode, URL-decoding, a 64 KB cap), scored by pluggable detectors, and
+  checked against a YAML policy that denies unknown tools by default. Risky calls pause until a human approves
+  exactly that call.
+- **Results coming back.** Output from untrusted sources (web, email, files) is scanned, wrapped as data, and
+  fingerprinted. If that data, or a session that has seen an injection attempt, later reaches a high-risk sink
+  like `send_email`, a human has to approve it. This is how indirect prompt injection actually arrives.
 
-**SentinelAgent** acts as a Zero-Trust firewall between the agent's decision loop and your real tools. It intercepts tool calls in-flight, computes real-time blast-radius scores (0–100), quarentines dangerous actions, requires cryptographic human sign-off for high-risk operations, and records an immutable SHA-256 audit ledger.
+## Features
 
----
+| | |
+|---|---|
+| **Detectors** | Prompt injection / jailbreak (bounded regexes, base64), blast radius (shell parsed to argv, so `rm -r -f /`, `find / -delete` and `curl … \| sh` are caught under any tool name), argument validation (SSRF parsed with `ipaddress`: decimal/hex/octal/IPv6/v4-mapped/private ranges). Detectors are entry-point plugins; a crashing or slow detector fails closed. |
+| **Policy** | One YAML schema (`sentinel/policies/default.yaml`), unknown keys rejected, profiles `default` / `dev` / `strict`. Unknown tools get `REQUIRE_APPROVAL` or `BLOCK`, never `ALLOW`. |
+| **Human approval** | Each approval is bound to a SHA-256 digest of the exact call. The HMAC token expires and works once. Arguments swapped during the wait are refused. Approvals live in a shared SQLite store used by the API, dashboard, CLI and MCP proxy. Agent and approver keys are separate. Optional Slack-compatible webhook. |
+| **Output guard + taint** | `inspect_result()` spotlights untrusted output. Per-session taint tracking gates high-risk sinks. |
+| **Audit ledger** | Append-only JSONL, HMAC-SHA256 chained with sequence numbers and a signed head (detects edits, deletion, reordering, truncation), file-locked for concurrent writers, secrets redacted before writing. |
+| **Integrations** | `sentinel mcp-proxy` (official MCP SDK) in front of any MCP server; an OpenAI-style function-calling wrapper; FastAPI server with `/metrics`; Streamlit dashboard as an API client. |
 
-## ⚡ Key Features
-
-- **⚡ Sub-Millisecond Overhead (`0.06 ms`)**: 250x faster than enterprise SLA requirements (< 15ms), handling over 17,000 tool interceptions/sec.
-- **🛡️ 3-Pillar Threat Detection**:
-  - `InjectionDetector`: Detects prompt overrides, DAN jailbreaks, hidden HTML/comment injections, and base64-obfuscated payloads.
-  - `BlastRadiusDetector`: Evaluates category risks, catastrophic commands, sensitive paths, and destructive SQL statements.
-  - `ArgumentValidator`: Enforces syntactic constraints against shell injection, path traversal, and AWS/GCP IMDS SSRF.
-- **📬 Human-in-the-Loop (HITL) Sandbox**: Quarantines high-risk tool calls with asynchronous approval queues accessible via CLI, Webhook REST API, or live Web Dashboard.
-- **📜 Cryptographically Chained Audit Ledger**: Every action commits via SHA-256 hash chaining to historical logs (`audit.jsonl`), ensuring complete non-repudiation and tamper detection.
-- **🔌 Drop-in Adapters**: Native support for **Model Context Protocol (MCP)**, **OpenAI Function Calling**, and **LangChain/CrewAI** agent runtimes.
-- **🖥️ Incident Response Dashboard**: Built-in Streamlit UI featuring live attack simulation, approval inbox, and cryptographic chain verification.
-
----
-
-## 🏗️ Architecture
-
-```mermaid
-flowchart TD
-    User([User Prompt / Task]) --> Agent[Autonomous AI Agent]
-    UntrustedWeb[Untrusted Webpage / Ingested Doc] -.->|Indirect Injection| Agent
-    
-    Agent -->|Proposed Tool Call| Gateway[SentinelAgent Security Gateway]
-    
-    subgraph SentinelCore ["SentinelAgent Core Engine (< 0.1ms)"]
-        Parser[Tool & Parameter Validator] --> InjectionDetect[Prompt Injection & Jailbreak Detector]
-        InjectionDetect --> RiskMatrix[Blast Radius Scoring Engine 0-100]
-        RiskMatrix --> PolicyCheck{Risk Tier?}
-    end
-    
-    Gateway --> Parser
-    
-    PolicyCheck -->|Safe < 30| AutoExec[Allow Execution]
-    PolicyCheck -->|Suspicious 30-69| WarnExec[Sanitize & Alert Log]
-    PolicyCheck -->|Critical >= 70| HITL[Quarantine & Trigger Human Approval]
-    
-    HITL --> Notification[CLI Prompt / Webhook / Web UI]
-    Notification --> HumanDecision{Human Approver}
-    HumanDecision -->|Approved| AutoExec
-    HumanDecision -->|Rejected / Timeout| Abort[Block & Return Security Violation]
-    
-    AutoExec --> Ledger[(Immutable SHA-256 Audit Ledger)]
-    Abort --> Ledger
-    AutoExec --> RealTool[Actual Tool: Bash / DB / Browser / API]
-    RealTool --> Agent
-```
-
----
-
-## 🚀 Quickstart
-
-### 1. Installation
+## Quickstart
 
 ```bash
-git clone https://github.com/Chirudeva-Reddy/sentinel-agent.git
-cd sentinel-agent
-
-# Using uv (recommended)
-uv sync --all-extras
-
-# Or standard pip
-pip install -e ".[dev]"
+git clone https://github.com/Chirudeva-Reddy/sentinel-agent.git && cd sentinel-agent
+uv sync --all-extras          # or: pip install -e ".[server,dashboard,mcp]"
 ```
-
-### 2. Interactive CLI
 
 ```bash
-# Test an adversarial attack simulation
-sentinel test-attack --type indirect_injection
-
-# Inspect any arbitrary tool call
-sentinel inspect --tool execute_bash --args '{"command": "rm -rf /"}'
-
-# Verify cryptographic audit chain integrity
-sentinel verify-ledger
-
-# Benchmark gateway latency overhead
-sentinel benchmark --iterations 500
+sentinel inspect --tool run_shell --args '{"cmd": "rm -r -f /"}'   # REQUIRE_APPROVAL, recursive rm of /
+sentinel eval                                                      # detection / false-positive rates
+sentinel verify-ledger                                             # HMAC chain + head check
 ```
 
-### 3. Launch Web Incident Dashboard
+### Put it in front of an MCP server
+
+```jsonc
+// Claude Desktop / any MCP client config
+{ "mcpServers": { "files": {
+    "command": "sentinel",
+    "args": ["mcp-proxy", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/Users/me/projects"]
+} } }
+```
+
+Blocked calls return an error to the model. Calls that need approval wait until someone approves them in the dashboard or API
+(same `SENTINEL_HOME`), and tool output reaches the model fenced as untrusted data.
+
+### Run the API and dashboard
 
 ```bash
-sentinel dashboard
-# Opens Streamlit live monitoring & approval center at http://localhost:8501
+export SENTINEL_AGENT_KEY=... SENTINEL_APPROVER_KEY=...
+uvicorn sentinel.server.app:app --port 8000
+SENTINEL_API_URL=http://localhost:8000 sentinel dashboard
+# or: docker compose -f docker/docker-compose.yml up   (needs the four SENTINEL_*_KEY vars)
 ```
 
-### 4. Drop-in Python Integration
+Agents call `POST /api/v1/intercept`, poll `GET /api/v1/approvals/{id}`, and exchange the token at
+`POST /api/v1/approvals/{id}/redeem` before running the tool. Approvers use `/approvals/pending` and `/resolve`.
+
+### In Python
 
 ```python
 from sentinel.core.gateway import SentinelGateway
-from sentinel.core.types import ToolCallRequest
 
 gateway = SentinelGateway()
 
-# Intercept an agent's proposed action
-tool_call = ToolCallRequest(
-    tool_name="execute_bash",
-    arguments={"command": "rm -rf / --no-preserve-root"},
-    raw_prompt_context="User asked to clean temp files",
-)
-
-assessment = gateway.inspect(tool_call)
-
-if assessment.requires_human_approval:
-    print(f"⚠️ Action quarantined! Risk Score: {assessment.overall_score}/100")
-    print(f"Approval Request ID: {assessment.approval_id}")
+# Checks the call, waits for approval if needed, runs exactly the approved arguments, guards the output.
+out = await gateway.execute_gated("fetch_url", {"url": url}, fetch_url, session_id="chat-42")
+model_sees = out["sanitized_result"]
 ```
 
----
+## How it works
 
-## 📊 Red-Team Evaluation & Benchmarks
+```mermaid
+flowchart LR
+    A[Agent / MCP client] -->|tool call| N[normalize] --> D[detector plugins] --> G[aggregate noisy-OR] --> P{policy floors<br/>+ taint rule}
+    P -->|ALLOW / WARN| T[tool]
+    P -->|REQUIRE_APPROVAL| H[(approval store)] -->|HMAC token, digest-bound| T
+    P -->|BLOCK| X[error to agent]
+    T -->|result| O[output guard] -->|fenced, fingerprinted| A
+    P --> L[(signed audit ledger)]
+    O --> L
+```
 
-Full benchmark data and methodology is available in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+Details, threat model and limits: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-| Metric | Target SLA | SentinelAgent Result | Performance |
-|---|---|---|---|
-| **Average Latency** | < 15.00 ms | **0.06 ms** | **250x faster** |
-| **p95 Latency** | < 25.00 ms | **0.08 ms** | **312x faster** |
-| **p99 Latency** | < 50.00 ms | **0.15 ms** | **333x faster** |
-| **Throughput** | > 500 req/s | **17,037 req/s** | **34x higher** |
-| **Red-Team Mitigation Rate** | > 90% | **100% (15/15 classes)** | **Flawless** |
+## Evaluation
 
----
+All numbers come from [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md), which `sentinel eval --markdown` generates from
+the corpora in `sentinel/corpus/`. A test fails if the file and the code disagree. On the current 42 attack / 50 benign cases:
+every attack is flagged, 88% are stopped by detector evidence alone, and there are no false positives. Known misses are listed there.
 
-## 💼 Resume Highlights for Engineers
+The corpus is small and hand-written, so treat these as regression numbers, not a coverage claim. Latency is measured by
+the CI `benchmark` job (`pytest -m benchmark`).
 
-If you are showcasing SentinelAgent on your resume or portfolio for **AI Engineer**, **Full-Stack / Backend Engineer**, or **AI Security Engineer** roles, here are recruiter-tailored bullet points:
+## Development
 
-> - **Engineered SentinelAgent**, a zero-trust security gateway and human-in-the-loop sandbox for autonomous AI agents that mitigates indirect prompt injections, tool parameter tampering, and SSRF attacks with **100% coverage across 15 adversarial attack classes**.
-> - **Designed a high-throughput proxy architecture** achieving **0.06ms average latency overhead** (250x faster than 15ms enterprise SLA) and sustaining **17,000+ tool interceptions per second**.
-> - **Built a cryptographic SHA-256 chained audit ledger** inspired by blockchain hash pointers, enabling verifiable non-repudiation and tamper detection for all agent actions and human approvals.
-> - **Implemented native adapters for Model Context Protocol (MCP) and OpenAI function calling**, alongside a real-time incident response dashboard using FastAPI and Streamlit.
-> - **Automated end-to-end testing and CI/CD pipelines** using GitHub Actions and Ruff, maintaining 37 automated test suites and strict type validation with Pydantic v2.
+See [AGENTS.md](AGENTS.md) for the workflow (tests first, one regression test per bug, generated docs).
 
----
+```bash
+uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov
+```
 
-## 🛠️ Tech Stack
+## License
 
-- **Core & Validation**: Python 3.10+, Pydantic v2, PyYAML
-- **Package & Dependency Management**: Astral `uv`
-- **CLI & Visualization**: Typer, Rich, Streamlit
-- **API & Webhooks**: FastAPI, Uvicorn, HTTPX
-- **Security & Integrity**: SHA-256 Hash Chaining, AST Regex Heuristics
-- **Testing & Quality**: Pytest, Pytest-Asyncio, Ruff, GitHub Actions CI
-- **Containerization**: Docker, Docker Compose
-
----
-
-## 📄 License
-
-Licensed under the [Apache License, Version 2.0](LICENSE).
+[Apache 2.0](LICENSE)

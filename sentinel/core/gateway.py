@@ -6,6 +6,7 @@ import copy
 import inspect
 import json
 import time
+from collections import Counter
 from typing import Any
 
 from sentinel.core.policy import PolicyEngine
@@ -62,7 +63,7 @@ def aggregate(scores: list[float], method: str = "noisy_or") -> float:
     return round((1 - miss) * 100, 4)
 
 
-_RANK = {
+DECISION_RANK = {
     DecisionAction.ALLOW: 0,
     DecisionAction.WARN_AND_ALLOW: 1,
     DecisionAction.REQUIRE_APPROVAL: 2,
@@ -96,6 +97,7 @@ class SentinelGateway:
         self.approval = approval_coordinator or ApprovalCoordinator()
         self.detectors = detectors if detectors is not None else load_detectors(self.policy)
         self.taint = TaintTracker(self.policy.config.taint_min_match)
+        self.stats: Counter[str] = Counter()  # exported by the API at /metrics
 
     def _run_detectors(self, call: NormalizedCall, detectors: list[Detector] | None = None) -> list[DetectorFinding]:
         """Runs every detector. A crash or a blown time budget is a SUSPICIOUS finding, never a skip."""
@@ -107,6 +109,7 @@ class SentinelGateway:
             try:
                 finding = det.analyze(call)
             except Exception as exc:  # noqa: BLE001 - fail closed on any detector bug
+                self.stats["detector_errors"] += 1
                 finding = DetectorFinding(
                     detector_name=det.NAME,
                     risk_score=suspicious,
@@ -162,10 +165,13 @@ class SentinelGateway:
             decision, reason = DecisionAction.BLOCK, f"Tool '{call.tool}' is explicitly blocked by security policy."
         elif (
             self.policy.does_tool_require_approval(call.tool)
-            and _RANK[decision] < _RANK[DecisionAction.REQUIRE_APPROVAL]
+            and DECISION_RANK[decision] < DECISION_RANK[DecisionAction.REQUIRE_APPROVAL]
         ):
             decision, reason = DecisionAction.REQUIRE_APPROVAL, f"Policy requires human approval for '{call.tool}'."
-        elif not self.policy.is_tool_known(call.tool) and _RANK[decision] < _RANK[cfg.unknown_tool_action]:
+        elif (
+            not self.policy.is_tool_known(call.tool)
+            and DECISION_RANK[decision] < DECISION_RANK[cfg.unknown_tool_action]
+        ):
             decision, reason = cfg.unknown_tool_action, f"Tool '{call.tool}' is not in the policy (deny by default)."
 
         requires_approval = decision == DecisionAction.REQUIRE_APPROVAL
@@ -184,6 +190,9 @@ class SentinelGateway:
             ).id
 
         latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        self.stats[f"decision:{decision.value}"] += 1
+        self.stats["latency_ms_sum"] += latency_ms  # type: ignore[assignment]
+        self.stats["latency_ms_count"] += 1
 
         assessment = RiskAssessment(
             overall_score=overall_score,
@@ -227,6 +236,7 @@ class SentinelGateway:
         view = NormalizedCall(tool=tool, args=[("result", canonical_text(text[:MAX_INPUT_CHARS]))], context=None)
         findings = self._run_detectors(view, [d for d in self.detectors if getattr(d, "SCANS_OUTPUT", False)])
         injection = any(f.risk_score >= cfg.safe_threshold for f in findings)
+        self.stats[f"results:{str(injection).lower()}"] += 1
         if untrusted:
             self.taint.label(tool_call.session_id, tool, text[:MAX_INPUT_CHARS], injection=injection)
         self.ledger.append(

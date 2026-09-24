@@ -9,6 +9,9 @@ from sentinel.core.policy import PolicyEngine
 from sentinel.core.types import DetectorFinding, RiskTier, ToolCallRequest
 from sentinel.normalize import NormalizedCall, normalize, shell_commands
 
+_CREDENTIAL = re.compile(
+    r"id_(rsa|ed25519|ecdsa|dsa)\b|\.env\b|\.aws/credentials|/etc/shadow|\.pem\b|\.kube/config", re.I
+)
 _WRAPPERS = {"sudo", "doas", "env", "nohup", "time", "nice", "command", "exec", "xargs"}
 _SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "python", "python3", "perl", "ruby", "node"}
 _SYSTEM_DIRS = r"bin|boot|dev|etc|lib|lib64|opt|root|sbin|srv|usr|var|home|users|system|library"
@@ -130,7 +133,12 @@ class BlastRadiusDetector:
         for key, text in call.args:
             if self.policy.is_sensitive_path(text):
                 matched.append(f"Sensitive target path in parameter '{key}': {text[:120]}")
-                score += 35.0
+                # Credential material (keys, .env, cloud creds, shadow) is a human decision on its own.
+                score = (
+                    max(score + 35.0, self.policy.config.critical_threshold)
+                    if _CREDENTIAL.search(text)
+                    else score + 35.0
+                )
             reasons = catastrophic_commands(text)
             if self.policy.contains_blocked_command(text):
                 reasons.append("policy blocked_commands signature")

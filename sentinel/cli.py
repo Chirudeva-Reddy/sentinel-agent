@@ -198,6 +198,29 @@ def benchmark(
     console.print(table)
 
 
+@app.command(name="eval")
+def eval_corpus(
+    markdown: bool = typer.Option(False, "--markdown", help="Print docs/BENCHMARKS.md content"),
+    as_json: bool = typer.Option(False, "--json", help="Print metrics and per-case rows as JSON"),
+) -> None:
+    """Evaluate the attack and benign corpora and report detection / false-positive rates."""
+    from sentinel.eval import evaluate, to_markdown
+
+    report = evaluate()
+    if markdown:
+        print(to_markdown(report), end="")
+        return
+    if as_json:
+        print(json.dumps({"metrics": report.metrics, "attacks": report.attacks, "benign": report.benign}, indent=2))
+        return
+    table = Table(title="SentinelAgent corpus evaluation", border_style="cyan")
+    table.add_column("Metric", style="bold white")
+    table.add_column("Value", style="bold green")
+    for k, v in report.metrics.items():
+        table.add_row(k, f"{v:.0f}" if k in ("attacks", "benign") else f"{v * 100:.1f}%")
+    console.print(table)
+
+
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def mcp_proxy(ctx: typer.Context) -> None:
     """Run an MCP proxy on stdio: sentinel mcp-proxy -- <upstream command...> (needs the [mcp] extra)."""

@@ -12,10 +12,11 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from sentinel.core.gateway import SentinelGateway
-from sentinel.core.types import ApprovalRequest, AuditRecord, RiskAssessment, ToolCallRequest
+from sentinel.core.types import ApprovalRequest, AuditRecord, DecisionAction, RiskAssessment, ToolCallRequest
 from sentinel.sandbox.approval import ApprovalCoordinator, ApprovalError, DigestMismatch, webhook_notifier
 
 
@@ -77,6 +78,28 @@ def create_app(gateway: SentinelGateway | None = None) -> FastAPI:
             "integrity_error": err,
             "timestamp": time.time(),
         }
+
+    @app.get("/metrics", response_class=PlainTextResponse)
+    def metrics() -> str:
+        """Prometheus text format. Counts only, no call contents."""
+        st = gw.stats
+        lines = ["# TYPE sentinel_decisions_total counter"]
+        lines += [
+            f'sentinel_decisions_total{{decision="{d.value}"}} {st[f"decision:{d.value}"]}' for d in DecisionAction
+        ]
+        lines += [
+            "# TYPE sentinel_tool_results_total counter",
+            f'sentinel_tool_results_total{{injection="true"}} {st["results:true"]}',
+            f'sentinel_tool_results_total{{injection="false"}} {st["results:false"]}',
+            "# TYPE sentinel_detector_errors_total counter",
+            f"sentinel_detector_errors_total {st['detector_errors']}",
+            "# TYPE sentinel_inspect_latency_ms summary",
+            f"sentinel_inspect_latency_ms_sum {st['latency_ms_sum']:.3f}",
+            f"sentinel_inspect_latency_ms_count {st['latency_ms_count']}",
+            "# TYPE sentinel_pending_approvals gauge",
+            f"sentinel_pending_approvals {len(gw.approval.list_pending())}",
+        ]
+        return "\n".join(lines) + "\n"
 
     # --- approver role (static paths first so "pending" is not read as an approval id) ---
 
