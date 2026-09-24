@@ -17,8 +17,27 @@ from sentinel.core.types import (
 from sentinel.detectors.argument_validator import ArgumentValidator
 from sentinel.detectors.blast_radius import BlastRadiusDetector
 from sentinel.detectors.injection import InjectionDetector
+from sentinel.normalize import normalize
 from sentinel.sandbox.approval import ApprovalCoordinator
 from sentinel.sandbox.ledger import AuditLedger
+
+_RANK = {
+    DecisionAction.ALLOW: 0,
+    DecisionAction.WARN_AND_ALLOW: 1,
+    DecisionAction.REQUIRE_APPROVAL: 2,
+    DecisionAction.BLOCK: 3,
+}
+_TIER_DECISION = {
+    RiskTier.CRITICAL: (
+        DecisionAction.REQUIRE_APPROVAL,
+        "Critical risk score ({score}/100) exceeded safety threshold. Execution quarantined pending human sign-off.",
+    ),
+    RiskTier.SUSPICIOUS: (
+        DecisionAction.WARN_AND_ALLOW,
+        "Suspicious risk score ({score}/100). Tool call allowed with telemetry alert and detailed audit capture.",
+    ),
+    RiskTier.SAFE: (DecisionAction.ALLOW, "Tool call cleared all security heuristics. Low blast radius."),
+}
 
 
 class SentinelGateway:
@@ -39,73 +58,55 @@ class SentinelGateway:
         # Initialize detector suite
         self.injection_detector = InjectionDetector()
         self.blast_radius_detector = BlastRadiusDetector(self.policy)
-        self.argument_validator = ArgumentValidator()
+        self.argument_validator = ArgumentValidator(self.policy)
 
     def inspect(self, tool_call: ToolCallRequest) -> RiskAssessment:
         """Synchronously analyzes a tool call, computes risk scores and records audit logs."""
         start_time = time.perf_counter()
 
-        findings: list[DetectorFinding] = []
+        call = normalize(tool_call)
+        findings: list[DetectorFinding] = [
+            self.injection_detector.analyze(call),
+            self.blast_radius_detector.analyze(call),
+            self.argument_validator.analyze(call),
+        ]
 
-        # 1. Run Detectors
-        injection_res = self.injection_detector.analyze(tool_call)
-        blast_res = self.blast_radius_detector.analyze(tool_call)
-        arg_res = self.argument_validator.analyze(tool_call)
-
-        findings.extend([injection_res, blast_res, arg_res])
-
-        # 2. Compute Aggregate Score (conservative maximum of specialized detectors)
-        max_score = max(f.risk_score for f in findings)
-        overall_score = round(max_score, 2)
-
-        # 3. Determine Risk Tier
-        if overall_score >= self.policy.config.critical_threshold:
+        overall_score = round(max(f.risk_score for f in findings), 2)
+        cfg = self.policy.config
+        if overall_score >= cfg.critical_threshold:
             tier = RiskTier.CRITICAL
-        elif overall_score >= self.policy.config.safe_threshold:
+        elif overall_score >= cfg.safe_threshold:
             tier = RiskTier.SUSPICIOUS
         else:
             tier = RiskTier.SAFE
 
-        # 4. Determine Enforcement Decision
-        # If tool is explicitly blocked or score is 100 on catastrophic command
-        if self.policy.is_tool_blocked(tool_call.tool_name):
-            decision = DecisionAction.BLOCK
-            reason = f"Tool '{tool_call.tool_name}' is explicitly blocked by security policy."
-            requires_approval = False
-            approval_id = None
-        elif tier == RiskTier.CRITICAL:
-            decision = DecisionAction.REQUIRE_APPROVAL
-            reason = (
-                f"Critical risk score ({overall_score}/100) exceeded safety threshold. "
-                "Execution quarantined pending human sign-off."
-            )
-            requires_approval = True
-            approval_req = self.approval.create_request(
+        decision, reason = _TIER_DECISION[tier]
+        reason = reason.format(score=overall_score)
+        # Policy floors: detectors can only make a decision stricter than the policy, never looser.
+        if self.policy.is_tool_blocked(call.tool):
+            decision, reason = DecisionAction.BLOCK, f"Tool '{call.tool}' is explicitly blocked by security policy."
+        elif (
+            self.policy.does_tool_require_approval(call.tool)
+            and _RANK[decision] < _RANK[DecisionAction.REQUIRE_APPROVAL]
+        ):
+            decision, reason = DecisionAction.REQUIRE_APPROVAL, f"Policy requires human approval for '{call.tool}'."
+        elif not self.policy.is_tool_known(call.tool) and _RANK[decision] < _RANK[cfg.unknown_tool_action]:
+            decision, reason = cfg.unknown_tool_action, f"Tool '{call.tool}' is not in the policy (deny by default)."
+
+        requires_approval = decision == DecisionAction.REQUIRE_APPROVAL
+        approval_id = None
+        if requires_approval:
+            approval_id = self.approval.create_request(
                 tool_call=tool_call,
                 assessment=RiskAssessment(
                     overall_score=overall_score,
                     tier=tier,
                     decision=decision,
                     findings=findings,
-                    latency_ms=0.0,
                     requires_human_approval=True,
                     reason=reason,
                 ),
-            )
-            approval_id = approval_req.id
-        elif tier == RiskTier.SUSPICIOUS:
-            decision = DecisionAction.WARN_AND_ALLOW
-            reason = (
-                f"Suspicious risk score ({overall_score}/100). "
-                "Tool call allowed with telemetry alert and detailed audit capture."
-            )
-            requires_approval = False
-            approval_id = None
-        else:
-            decision = DecisionAction.ALLOW
-            reason = "Tool call cleared all security heuristics. Low blast radius."
-            requires_approval = False
-            approval_id = None
+            ).id
 
         latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
 

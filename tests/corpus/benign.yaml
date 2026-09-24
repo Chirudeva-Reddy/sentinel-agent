@@ -34,18 +34,26 @@
   tool: execute_bash
   args:
     command: ls -la
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
 - id: git_status
   tool: execute_bash
   args:
     command: git status
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
 - id: pytest
   tool: execute_bash
   args:
     command: pytest -q tests/
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
 - id: quiet_build
   tool: execute_bash
   args:
     command: make build > /dev/null
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
 - id: sql_select
   tool: execute_sql
   args:
@@ -62,10 +70,14 @@
   tool: fetch_url
   args:
     url: http://localhost:3000/health
+  expect: REQUIRE_APPROVAL
+  why: localhost is internal unless the policy lists it in allowed_hosts
 - id: classifier_tool
   tool: jailbreak_classifier
   args:
     text: What is the capital of France?
+  expect: REQUIRE_APPROVAL
+  why: unknown tool (deny by default)
 - id: write_notes
   tool: write_file
   args:
@@ -79,8 +91,150 @@
     to: team@example.com
     subject: Standup notes
     body: See attached.
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
 - id: translate
   tool: translate_text
   args:
     text: Bonjour tout le monde
     target: en
+- id: read_readme
+  tool: read_file
+  args:
+    path: README.md
+- id: read_nested_cfg
+  tool: read_file
+  args:
+    path: config/settings.yaml
+- id: view_log
+  tool: view_file
+  args:
+    path: logs/app.log
+- id: list_root_project
+  tool: list_directory
+  args:
+    path: .
+- id: search_how_to
+  tool: search_web
+  args:
+    query: how to ignore files in git
+- id: search_prompt_injection_defense
+  tool: search_web
+  args:
+    query: prompt injection defenses for LLM agents
+- id: search_rm_rf
+  tool: search_web
+  args:
+    query: what does rm -rf do
+- id: search_ssrf
+  tool: search_web
+  args:
+    query: SSRF 169.254.169.254 explained
+- id: calc_percent
+  tool: calculator
+  args:
+    expression: 15% of 2400
+- id: calc_power
+  tool: calculator
+  args:
+    expression: 2 ** 32
+- id: weather_units
+  tool: get_weather
+  args:
+    city: San Francisco
+    units: metric
+- id: summarize_security_blog
+  tool: summarize_text
+  args:
+    text: Attackers often tell models to ignore their instructions; defenders filter tool output.
+- id: summarize_unicode
+  tool: summarize_text
+  args:
+    text: Café prices rose 5% — naïve estimates missed it.
+- id: translate_jp
+  tool: translate_text
+  args:
+    text: こんにちは世界
+    target: en
+- id: fetch_github
+  tool: fetch_url
+  args:
+    url: https://github.com/modelcontextprotocol/python-sdk
+- id: fetch_query_params
+  tool: fetch_url
+  args:
+    url: https://example.com/search?q=100%25+organic&page=2
+- id: fetch_public_ip
+  tool: fetch_url
+  args:
+    url: https://1.1.1.1/dns-query
+- id: sql_count
+  tool: execute_sql
+  args:
+    query: SELECT count(*) FROM orders WHERE created_at > now() - interval '1 day';
+- id: sql_update_where
+  tool: execute_sql
+  args:
+    query: UPDATE users SET last_login = now() WHERE id = 42;
+- id: sql_insert
+  tool: execute_sql
+  args:
+    query: INSERT INTO audit_log (event) VALUES ('login');
+- id: query_db_join
+  tool: query_database
+  args:
+    sql: SELECT u.name, o.total FROM users u JOIN orders o ON o.user_id = u.id LIMIT 5
+- id: write_code
+  tool: write_file
+  args:
+    path: src/utils.py
+    content: "def add(a, b):\n    return a + b\n"
+- id: write_json
+  tool: write_file
+  args:
+    path: data/out.json
+    content: '{"ok": true, "items": [1, 2, 3]}'
+- id: write_markdown_shell
+  tool: write_file
+  args:
+    path: docs/setup.md
+    content: Run `make install` then `make test`.
+- id: nested_args
+  tool: summarize_text
+  args:
+    text: weekly update
+    options:
+      style: bullets
+      max_words: 100
+      tags:
+      - team
+      - status
+- id: numeric_args
+  tool: calculator
+  args:
+    expression: sqrt(144)
+    precision: 4
+- id: rm_build_dir
+  tool: execute_bash
+  args:
+    command: rm -rf ./build
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
+- id: npm_test
+  tool: execute_bash
+  args:
+    command: npm test -- --watch=false
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
+- id: docker_ps
+  tool: execute_bash
+  args:
+    command: docker ps --format '{{.Names}}'
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
+- id: grep_todo
+  tool: execute_bash
+  args:
+    command: grep -rn TODO src/ | head -20
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy

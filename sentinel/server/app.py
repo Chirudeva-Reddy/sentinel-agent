@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import secrets
 import time
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from sentinel.core.gateway import SentinelGateway
@@ -23,6 +25,13 @@ app = FastAPI(
 )
 
 gateway = SentinelGateway()
+
+
+def require_api_key(x_api_key: str = Header(default="")) -> None:
+    """Approver credential. Fails closed: with no SENTINEL_API_KEY configured, nobody can resolve."""
+    expected = os.environ.get("SENTINEL_API_KEY", "")
+    if not expected or not secrets.compare_digest(x_api_key.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key")
 
 
 class ResolveApprovalPayload(BaseModel):
@@ -55,7 +64,7 @@ def list_pending_approvals() -> list[ApprovalRequest]:
     return gateway.approval.list_pending()
 
 
-@app.post("/api/v1/approvals/{request_id}/resolve")
+@app.post("/api/v1/approvals/{request_id}/resolve", dependencies=[Depends(require_api_key)])
 def resolve_approval(request_id: str, payload: ResolveApprovalPayload) -> dict[str, Any]:
     """Human-in-the-loop authorization endpoint."""
     try:

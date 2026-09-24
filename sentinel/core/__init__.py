@@ -1,7 +1,9 @@
 """Core primitives and gateway for SentinelAgent."""
 
-from sentinel.core.gateway import SentinelGateway
-from sentinel.core.policy import PolicyEngine
+from __future__ import annotations
+
+from typing import Any
+
 from sentinel.core.types import (
     ApprovalRequest,
     ApprovalStatus,
@@ -13,6 +15,20 @@ from sentinel.core.types import (
     RiskTier,
     ToolCallRequest,
 )
+
+
+def __getattr__(name: str) -> Any:
+    # Lazy: importing sentinel.core.types must not pull in the gateway (and with it every detector/store).
+    if name == "SentinelGateway":
+        from sentinel.core.gateway import SentinelGateway
+
+        return SentinelGateway
+    if name == "PolicyEngine":
+        from sentinel.core.policy import PolicyEngine
+
+        return PolicyEngine
+    raise AttributeError(name)
+
 
 __all__ = [
     "ApprovalRequest",
