@@ -129,7 +129,7 @@ gateway = SentinelGateway()
 tool_call = ToolCallRequest(
     tool_name="execute_bash",
     arguments={"command": "rm -rf / --no-preserve-root"},
-    raw_prompt_context="User asked to clean temp files"
+    raw_prompt_context="User asked to clean temp files",
 )
 
 assessment = gateway.inspect(tool_call)
