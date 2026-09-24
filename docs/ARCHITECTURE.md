@@ -58,7 +58,7 @@ sequenceDiagram
 | `sentinel/taint.py` | Per-session 20-char shingle fingerprints of untrusted output, plus a "compromised" flag. |
 | `sentinel/sandbox/approval.py` | SQLite approval store (WAL), digest binding, HMAC tokens, single-use redeem, polling waiters, webhook notifier. |
 | `sentinel/sandbox/ledger.py` | HMAC chain over every record field, `seq`, signed `.head` checkpoint, `flock`, redaction. |
-| `sentinel/server/app.py` | `create_app()`: intercept / poll / redeem (agent key), pending / resolve / audit (approver key), `/metrics`, health. |
+| `sentinel/server/app.py` | `create_app()`: intercept / results / poll / redeem (agent key), pending / resolve / audit (approver key), `/metrics`, health. |
 | `sentinel/adapters/` | MCP proxy and OpenAI-style wrapper, both built on `execute_gated` and both checked by one contract test suite. |
 
 ## Scoring
@@ -83,6 +83,8 @@ closed. The MCP proxy strips all `SENTINEL_*` variables from the environment it 
 
 - The detectors are heuristics. See `docs/BENCHMARKS.md` for measured rates and the misses.
 - Taint tracking matches substrings, so paraphrased or re-encoded exfiltration gets through. It raises the bar and doesn't solve the problem.
+- Tool output is scanned up to 1 MB in overlapping 64 KB chunks; untrusted output larger than that marks the session compromised. Taint fingerprints cover the first and last 64 KB of each output, so plain data copied from the middle of a very large page is not tainted (an injection anywhere in the scanned range still is).
+- Shell parsing unwraps `sh -c`, `eval` and wrapper programs (`sudo`, `env`, `timeout`, ...) up to three levels deep. Other interpreters (`python -c "os.system(...)"`) are not parsed.
 - Approval waiters poll SQLite. Many API replicas or sub-100 ms approval latency would need Redis or Postgres notifications.
 - Deleting both the ledger and its head file together goes undetected unless head checkpoints are shipped off-host.
 - `flock` is POSIX-only, so there's no cross-process ledger lock on Windows.

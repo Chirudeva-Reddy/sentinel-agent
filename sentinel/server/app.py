@@ -16,7 +16,14 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from sentinel.core.gateway import SentinelGateway
-from sentinel.core.types import ApprovalRequest, AuditRecord, DecisionAction, RiskAssessment, ToolCallRequest
+from sentinel.core.types import (
+    ApprovalRequest,
+    AuditRecord,
+    DecisionAction,
+    ResultAssessment,
+    RiskAssessment,
+    ToolCallRequest,
+)
 from sentinel.sandbox.approval import ApprovalCoordinator, ApprovalError, DigestMismatch, webhook_notifier
 
 
@@ -40,6 +47,12 @@ class ResolvePayload(BaseModel):
     approve: bool
     approver: str = "security-officer"
     reason: str | None = None
+
+
+class ResultPayload(BaseModel):
+    tool_call: ToolCallRequest
+    """The call that produced the output; its session_id links the output to later calls for taint tracking."""
+    result: Any = None
 
 
 class RedeemPayload(BaseModel):
@@ -112,6 +125,12 @@ def create_app(gateway: SentinelGateway | None = None) -> FastAPI:
     @app.post("/api/v1/intercept", response_model=RiskAssessment, dependencies=[agent])
     def intercept(request: ToolCallRequest) -> RiskAssessment:
         return gw.inspect(request)
+
+    @app.post("/api/v1/results", response_model=ResultAssessment, dependencies=[agent])
+    def guard_result(body: ResultPayload) -> ResultAssessment:
+        """Send tool output here before giving it to the model: it is scanned, fenced if untrusted, and
+        fingerprinted so later calls in the same session_id are checked against it."""
+        return gw.inspect_result(body.tool_call, body.result)
 
     @app.get("/api/v1/approvals/{request_id}", dependencies=[agent])
     def poll(request_id: str) -> dict[str, Any]:

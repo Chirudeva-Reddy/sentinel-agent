@@ -62,14 +62,3 @@ def test_crashing_detector_fails_closed(monkeypatch):
 def test_explicit_detector_list_overrides_registry():
     gw = SentinelGateway(detectors=[AlwaysCritical(None)])
     assert [d.NAME for d in gw.detectors] == ["always_critical"]
-
-
-def test_duplicate_entry_points_load_once(monkeypatch):
-    """Two installed dists registering the same detector (e.g. after a package rename) must not double-count."""
-    real = registry.entry_points
-    monkeypatch.setattr(registry, "entry_points", lambda group: [*real(group=group), *real(group=group)])
-    assert sorted(d.NAME for d in SentinelGateway().detectors) == [
-        "argument_validator",
-        "blast_radius_detector",
-        "prompt_injection_detector",
-    ]

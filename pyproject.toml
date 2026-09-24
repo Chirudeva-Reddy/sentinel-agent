@@ -1,6 +1,6 @@
 [project]
 name = "sentinel-agent-gateway"
-version = "0.2.0"
+version = "0.2.1"
 description = "Deny-by-default security gateway, human-approval sandbox and MCP proxy for AI agents"
 readme = "README.md"
 authors = [

@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from sentinel.core.types import PolicyConfig
+from sentinel.normalize import fold_tool_name
 
 
 class PolicyEngine:
@@ -36,11 +37,8 @@ class PolicyEngine:
         return cls(PolicyConfig(**data))
 
     @staticmethod
-    def _fold(tool_name: str) -> str:
-        return tool_name.strip().lower()
-
-    def _in(self, tool_name: str, tools: list[str]) -> bool:
-        return self._fold(tool_name) in {self._fold(t) for t in tools}
+    def _in(tool_name: str, tools: list[str]) -> bool:
+        return fold_tool_name(tool_name) in {fold_tool_name(t) for t in tools}
 
     def is_tool_blocked(self, tool_name: str) -> bool:
         return self._in(tool_name, self.config.blocked_tools)

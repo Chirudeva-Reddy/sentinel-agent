@@ -12,17 +12,69 @@ from sentinel.normalize import NormalizedCall, normalize, shell_commands
 _CREDENTIAL = re.compile(
     r"id_(rsa|ed25519|ecdsa|dsa)\b|\.env\b|\.aws/credentials|/etc/shadow|\.pem\b|\.kube/config", re.I
 )
-_WRAPPERS = {"sudo", "doas", "env", "nohup", "time", "nice", "command", "exec", "xargs"}
+# Programs that run another program. Their own flags and values (sudo -u root, timeout 5, nice -n 10) are skipped.
+_WRAPPERS = {
+    "sudo", "doas", "env", "nohup", "time", "nice", "command", "exec", "xargs", "timeout", "stdbuf", "ionice",
+    "chrt", "taskset", "setsid", "unbuffer", "flock", "runuser", "watch", "strace", "caffeinate",
+}  # fmt: skip
 _SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "python", "python3", "perl", "ruby", "node"}
+_SCRIPT_SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}  # take a command string via -c
+_RULE_PROGS = {
+    "rm",
+    "find",
+    "dd",
+    "shred",
+    "chmod",
+    "chown",
+    "chgrp",
+    "wipefs",
+    "fdisk",
+    "sfdisk",
+    "parted",
+    "curl",
+    "wget",
+    "eval",
+}
 _SYSTEM_DIRS = r"bin|boot|dev|etc|lib|lib64|opt|root|sbin|srv|usr|var|home|users|system|library"
 _CRITICAL_TARGET = re.compile(rf"^(/|/\*|~/?\*?|\$\{{?home\}}?/?\*?|\*|\.|\./\*|\.\.|/({_SYSTEM_DIRS})/?\*?)$", re.I)
+_MAX_NESTING = 3
+
+
+def _prog(token: str) -> str:
+    return posixpath.basename(token).lower()
+
+
+def _is_program(token: str) -> bool:
+    p = _prog(token)
+    return p in _RULE_PROGS or p in _SHELLS or p in _WRAPPERS or p.startswith("mkfs")
 
 
 def _strip_wrappers(argv: list[str]) -> list[str]:
+    """Drop VAR=val assignments and wrapper programs (with their flags) to reach the command that runs."""
     i = 0
-    while i < len(argv) and (argv[i] in _WRAPPERS or ("=" in argv[i] and not argv[i].startswith("-"))):
-        i += 1
+    while i < len(argv):
+        if "=" in argv[i] and not argv[i].startswith("-"):
+            i += 1
+        elif _prog(argv[i]) in _WRAPPERS:
+            nxt = next((k for k in range(i + 1, len(argv)) if _is_program(argv[k])), None)
+            if nxt is None:
+                return argv[i:]  # wraps something we have no rule for
+            i = nxt
+        else:
+            break
     return argv[i:]
+
+
+def _nested_script(argv: list[str]) -> str | None:
+    """The command string an `sh -c '...'` / `bash -lc '...'` / `eval ...` will run, if any."""
+    prog = _prog(argv[0])
+    if prog == "eval":
+        return " ".join(argv[1:])
+    if prog in _SCRIPT_SHELLS:
+        for k, a in enumerate(argv[1:], start=1):
+            if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:
+                return argv[k + 1] if k + 1 < len(argv) else None
+    return None
 
 
 def _flags(argv: list[str]) -> set[str]:
@@ -70,12 +122,17 @@ def catastrophic_reason(argv: list[str], next_argv: list[str] | None, op: str | 
     return None
 
 
-def catastrophic_commands(text: str) -> list[str]:
+def catastrophic_commands(text: str, depth: int = 0) -> list[str]:
     reasons = []
     if ":(){" in text.replace(" ", ""):
         reasons.append("fork bomb")
-    cmds = shell_commands(text)
+    cmds = [(_strip_wrappers(argv), op) for argv, op in shell_commands(text)]
     for i, (argv, op) in enumerate(cmds):
+        if not argv:
+            continue
+        script = _nested_script(argv)
+        if script and depth < _MAX_NESTING:
+            reasons += [f"{r} (inside {_prog(argv[0])})" for r in catastrophic_commands(script, depth + 1)]
         nxt = cmds[i + 1][0] if i + 1 < len(cmds) else None
         r = catastrophic_reason(argv, nxt, op)
         if r:

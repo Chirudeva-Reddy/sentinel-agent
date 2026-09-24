@@ -97,6 +97,33 @@ class ArgumentValidator:
                     return f"'{host}' resolves to internal address {resolved}"
         return None
 
+    def _bare_target_reason(self, text: str) -> str | None:
+        """An argument that is *only* an address ("169.254.169.254/latest", "localhost:6379", "//10.0.0.1/x")
+        is a network target even without a scheme; many fetch tools add http:// themselves. Prose that merely
+        mentions an IP has spaces and is left to the scheme'd-URL and network-command checks."""
+        token = text.strip()
+        if not token or "://" in token or any(ch.isspace() for ch in token):
+            return None
+        rest = token.lstrip("/")
+        try:
+            host = (urlsplit("http://" + rest).hostname or "").lower().rstrip(".")
+        except ValueError:
+            return None
+        if not host or host in self.policy.config.allowed_hosts:
+            return None
+        if host in _INTERNAL_HOSTNAMES or host.endswith((".internal", ".local", ".localhost")):
+            return f"internal hostname '{host}'"
+        try:
+            addr: IPAddress | None = ipaddress.ip_address(host)
+        except ValueError:
+            # Legacy numeric forms only with a port/path and only when they can't be a small number (42/7).
+            targeted = token.startswith("//") or any(ch in rest for ch in "/:")
+            legacy = re.fullmatch(r"0x[0-9a-f]+|[0-9]{8,}|[0-9x.]*\.[0-9x.]*", host, re.I)
+            addr = parse_ip(host) if targeted and legacy else None
+        if addr is not None and isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+            addr = addr.ipv4_mapped
+        return f"internal address {addr}" if addr is not None and is_internal(addr) else None
+
     def _bare_ip_reasons(self, text: str) -> list[str]:
         """Bare IPs in commands (e.g. `nc 10.0.0.5 4444`). Strict parsing only: '42' is not an IP here."""
         out = []
@@ -127,8 +154,12 @@ class ArgumentValidator:
                     score += 55.0
             urls = _URL.findall(text)
             reasons = [r for u in urls if (r := self._ssrf_reason(u))]
-            if not urls and any(posixpath.basename(argv[0]) in _NET_TOOLS for argv, _ in shell_commands(text)):
-                reasons += self._bare_ip_reasons(text)  # only where the IP is a network target, not prose
+            if not urls:
+                bare = self._bare_target_reason(text)
+                if bare:
+                    reasons.append(bare)
+                elif any(posixpath.basename(argv[0]) in _NET_TOOLS for argv, _ in shell_commands(text)):
+                    reasons += self._bare_ip_reasons(text)  # only where the IP is a network target, not prose
             for r in dict.fromkeys(reasons):
                 matched.append(f"SSRF / internal target in '{key}': {r}")
                 score += 70.0

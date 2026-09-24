@@ -34,6 +34,11 @@ class NormalizedCall:
         return self.args + ([("context", self.context)] if self.context else [])
 
 
+def fold_tool_name(name: str) -> str:
+    """The one way tool names are compared everywhere (policy lists, detectors, approval digests)."""
+    return unicodedata.normalize("NFKC", name).strip().lower()
+
+
 def canonical_text(s: str) -> str:
     """NFKC + zero-width strip + URL-decode to a fixed point (bounded)."""
     s = unicodedata.normalize("NFKC", s).translate(_ZERO_WIDTH)
@@ -70,7 +75,7 @@ def normalize(req: ToolCallRequest | NormalizedCall) -> NormalizedCall:
             context, truncated = context[: max(budget, 0)], True
         context = canonical_text(context)
     return NormalizedCall(
-        tool=unicodedata.normalize("NFKC", req.tool_name).strip().lower(),
+        tool=fold_tool_name(req.tool_name),
         args=args,
         context=context,
         truncated=truncated,

@@ -21,6 +21,7 @@ from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
 from sentinel.core.gateway import SentinelGateway
+from sentinel.normalize import fold_tool_name
 
 
 def _text(result: types.CallToolResult) -> str:
@@ -35,12 +36,15 @@ def build_proxy(upstream: Client, gateway: SentinelGateway, session_id: str | No
     """An MCP Server that forwards to a connected upstream Client through the gateway."""
     session = session_id or f"mcp-{uuid.uuid4().hex[:12]}"
 
-    sources = {t.strip().lower() for t in gateway.policy.config.taint_sources}
+    sources = {fold_tool_name(t) for t in gateway.policy.config.taint_sources}
 
     async def list_tools(ctx: Any, params: types.PaginatedRequestParams | None) -> types.ListToolsResult:
         listed = await upstream.list_tools(cursor=params.cursor if params else None)
         # Untrusted-source tools return guarded text only (see call_tool), so they can't promise a schema.
-        tools = [t.model_copy(update={"output_schema": None}) if t.name.lower() in sources else t for t in listed.tools]
+        tools = [
+            t.model_copy(update={"output_schema": None}) if fold_tool_name(t.name) in sources else t
+            for t in listed.tools
+        ]
         return listed.model_copy(update={"tools": tools})
 
     async def call_tool(ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:

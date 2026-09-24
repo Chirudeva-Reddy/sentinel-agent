@@ -15,12 +15,12 @@ import logging
 import sqlite3
 import threading
 import time
-import unicodedata
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
 from sentinel.core.types import ApprovalRequest, ApprovalStatus, RiskAssessment, ToolCallRequest
+from sentinel.normalize import fold_tool_name
 from sentinel.settings import secret_key, sentinel_home
 
 log = logging.getLogger(__name__)
@@ -38,8 +38,9 @@ class DigestMismatch(ApprovalError):
 
 def call_digest(call: ToolCallRequest) -> str:
     """Canonical sha256 over the folded tool name and key-sorted arguments."""
-    tool = unicodedata.normalize("NFKC", call.tool_name).strip().lower()
-    body = json.dumps([tool, call.arguments], sort_keys=True, separators=(",", ":"), default=str)
+    body = json.dumps(
+        [fold_tool_name(call.tool_name), call.arguments], sort_keys=True, separators=(",", ":"), default=str
+    )
     return hashlib.sha256(body.encode()).hexdigest()
 
 

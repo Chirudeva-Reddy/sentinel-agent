@@ -20,10 +20,13 @@ from sentinel.core.types import (
     ToolCallRequest,
 )
 from sentinel.detectors import Detector, load_detectors
-from sentinel.normalize import MAX_INPUT_CHARS, NormalizedCall, canonical_text, normalize
+from sentinel.normalize import MAX_INPUT_CHARS, NormalizedCall, canonical_text, fold_tool_name, normalize
 from sentinel.sandbox.approval import ApprovalCoordinator, ApprovalError, DigestMismatch
 from sentinel.sandbox.ledger import AuditLedger
 from sentinel.taint import TaintTracker
+
+MAX_OUTPUT_CHARS = 1_000_000  # tool output scanned per result; larger untrusted output fails closed
+_CHUNK_OVERLAP = 2_048  # so a pattern split across two chunks is still seen whole
 
 _FENCE_OPEN, _FENCE_CLOSE = "<<untrusted-data", "<</untrusted-data>>"
 
@@ -138,7 +141,7 @@ class SentinelGateway:
         call = normalize(tool_call)
         findings = self._run_detectors(call)
         cfg = self.policy.config
-        if {k.lower(): v for k, v in cfg.taint_sinks.items()}.get(call.tool) == "high":
+        if {fold_tool_name(k): v for k, v in cfg.taint_sinks.items()}.get(call.tool) == "high":
             hits = self.taint.check(tool_call.session_id, [t for _, t in call.args])
             if hits:
                 findings.append(
@@ -231,14 +234,18 @@ class SentinelGateway:
         cfg = self.policy.config
         tool = normalize(tool_call).tool
         text = _result_text(result)
-        untrusted = tool in {t.strip().lower() for t in cfg.taint_sources}
-        # Output is capped for scanning but a big page is not suspicious in itself (unlike a big argument).
-        view = NormalizedCall(tool=tool, args=[("result", canonical_text(text[:MAX_INPUT_CHARS]))], context=None)
-        findings = self._run_detectors(view, [d for d in self.detectors if getattr(d, "SCANS_OUTPUT", False)])
+        untrusted = tool in {fold_tool_name(t) for t in cfg.taint_sources}
+        findings = self._scan_output(tool, text[:MAX_OUTPUT_CHARS])
         injection = any(f.risk_score >= cfg.safe_threshold for f in findings)
         self.stats[f"results:{str(injection).lower()}"] += 1
         if untrusted:
-            self.taint.label(tool_call.session_id, tool, text[:MAX_INPUT_CHARS], injection=injection)
+            # ponytail: fingerprints cover the first and last 64 KB (memory is per character); an injection
+            # anywhere in the scanned 1 MB still marks the session, and anything larger fails closed.
+            prints = (
+                text if len(text) <= 2 * MAX_INPUT_CHARS else text[:MAX_INPUT_CHARS] + "\n" + text[-MAX_INPUT_CHARS:]
+            )
+            oversized = len(text) > MAX_OUTPUT_CHARS
+            self.taint.label(tool_call.session_id, tool, prints, injection=injection or oversized)
         self.ledger.append(
             "TOOL_RESULT",
             {
@@ -258,6 +265,22 @@ class SentinelGateway:
             findings=findings,
             sanitized_text=_spotlight(tool, text, injection) if untrusted else text,
         )
+
+    def _scan_output(self, tool: str, text: str) -> list[DetectorFinding]:
+        """Run output-capable detectors over every overlapping 64 KB chunk; keep each detector's worst finding.
+        Padding a page past the first chunk must not hide an injection."""
+        detectors = [d for d in self.detectors if getattr(d, "SCANS_OUTPUT", False)]
+        worst: dict[str, DetectorFinding] = {}
+        step = MAX_INPUT_CHARS - _CHUNK_OVERLAP
+        for start in range(0, max(len(text), 1), step):
+            chunk = text[start : start + MAX_INPUT_CHARS]
+            view = NormalizedCall(tool=tool, args=[("result", canonical_text(chunk))], context=None)
+            for f in self._run_detectors(view, detectors):
+                if f.detector_name not in worst or f.risk_score > worst[f.detector_name].risk_score:
+                    worst[f.detector_name] = f
+            if start + MAX_INPUT_CHARS >= len(text):
+                break
+        return list(worst.values())
 
     async def execute_gated(
         self,
