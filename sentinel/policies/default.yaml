@@ -61,3 +61,31 @@ sensitive_paths:
 # Extra substring signatures. Destructive shell commands (rm -r /, find / -delete, mkfs, dd of=/dev,
 # curl | sh, fork bombs) are detected by parsing argv in BlastRadiusDetector, not listed here.
 blocked_commands: []
+
+# --- Output guard & taint tracking ---------------------------------------------------------------
+# Output of these tools is untrusted: it is scanned for injections, wrapped as data, and fingerprinted.
+taint_sources:
+  - "fetch_url"
+  - "scrape_url"
+  - "http_get"
+  - "search_web"
+  - "read_file"
+  - "read_email"
+  - "browse"
+
+# Sinks rated "high" require approval when their arguments carry untrusted data, or when the session
+# has already seen an injection attempt in untrusted output. "low" sinks are only logged.
+taint_sinks:
+  send_email: "high"
+  http_post: "high"
+  execute_bash: "high"
+  shell: "high"
+  run_shell: "high"
+  run_command: "high"
+  transfer_funds: "high"
+  make_payment: "high"
+  git_push: "high"
+  write_file: "low"
+
+# Minimum copied substring (characters) for an argument to inherit taint.
+taint_min_match: 20

@@ -1,9 +1,5 @@
-"""Adapters for integrating SentinelAgent with agent frameworks."""
+"""Framework adapters. The MCP proxy (sentinel.adapters.mcp_proxy) needs the [mcp] extra."""
 
-from sentinel.adapters.mcp_adapter import SentinelMCPMiddleware
 from sentinel.adapters.openai_adapter import SentinelOpenAIWrapper
 
-__all__ = [
-    "SentinelMCPMiddleware",
-    "SentinelOpenAIWrapper",
-]
+__all__ = ["SentinelOpenAIWrapper"]

@@ -72,7 +72,7 @@ def inspect(
     tool: str = typer.Option(..., "--tool", "-t", help="Name of the tool to inspect"),
     args: str = typer.Option("{}", "--args", "-a", help="JSON string of tool arguments"),
     context: str | None = typer.Option(None, "--context", "-c", help="Prompt context or web content"),
-):
+) -> None:
     """Inspect a proposed tool call and evaluate its security risk."""
     gateway = SentinelGateway()
     try:
@@ -90,7 +90,7 @@ def verify_ledger(
     path: Path | None = typer.Option(
         None, "--path", "-p", help="Path to audit ledger (default $SENTINEL_HOME/audit.jsonl)"
     ),
-):
+) -> None:
     """Cryptographically verify the integrity of the audit log."""
     path = path or sentinel_home() / "audit.jsonl"
     if not path.exists():
@@ -115,7 +115,7 @@ def verify_ledger(
 @app.command()
 def test_attack(
     attack_type: str = typer.Option("indirect_injection", "--type", "-t", help="Attack type to simulate"),
-):
+) -> None:
     """Simulate a red-team adversarial attack on an autonomous agent."""
     gateway = SentinelGateway()
 
@@ -166,7 +166,7 @@ def test_attack(
 @app.command()
 def benchmark(
     iterations: int = typer.Option(500, "--iterations", "-n", help="Number of benchmark iterations"),
-):
+) -> None:
     """Benchmark interception throughput and latency overhead."""
     gateway = SentinelGateway()
     req = ToolCallRequest(
@@ -198,8 +198,16 @@ def benchmark(
     console.print(table)
 
 
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def mcp_proxy(ctx: typer.Context) -> None:
+    """Run an MCP proxy on stdio: sentinel mcp-proxy -- <upstream command...> (needs the [mcp] extra)."""
+    from sentinel.adapters.mcp_proxy import run
+
+    run(list(ctx.args))
+
+
 @app.command()
-def dashboard():
+def dashboard() -> None:
     """Launch the interactive SentinelAgent visual dashboard."""
     dashboard_path = Path(__file__).parent / "server" / "dashboard.py"
     rprint("[bold cyan]Launching SentinelAgent Incident Response Dashboard...[/bold cyan]")
