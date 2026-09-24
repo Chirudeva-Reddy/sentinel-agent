@@ -48,3 +48,11 @@ jobs:
         with:
           name: benchmark
           path: benchmark.json
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f docker/Dockerfile -t sentinel-agent .
+      - name: Detectors are registered in the image
+        run: docker run --rm sentinel-agent python -c "from sentinel.core.gateway import SentinelGateway as G; print([d.NAME for d in G().detectors])"

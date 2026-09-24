@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import time
 from typing import Any
 
@@ -16,7 +17,7 @@ from sentinel.core.types import (
 )
 from sentinel.detectors import Detector, load_detectors
 from sentinel.normalize import NormalizedCall, normalize
-from sentinel.sandbox.approval import ApprovalCoordinator
+from sentinel.sandbox.approval import ApprovalCoordinator, DigestMismatch
 from sentinel.sandbox.ledger import AuditLedger
 
 
@@ -179,14 +180,15 @@ class SentinelGateway:
         raw_prompt_context: str | None = None,
         agent_id: str = "agent-alpha",
     ) -> dict[str, Any]:
-        """Convenience method: intercepts, requests approval if critical, and executes only if approved."""
-        request = ToolCallRequest(
-            tool_name=tool_name,
-            arguments=arguments,
-            raw_prompt_context=raw_prompt_context,
-            agent_id=agent_id,
-        )
+        """Intercept, wait for approval if required, then execute exactly the call that was checked.
 
+        The arguments are deep-copied at inspection time and only that copy is executed. If the
+        caller's dict changed while a human was deciding, the approval is refused (DigestMismatch).
+        """
+        frozen = copy.deepcopy(arguments)
+        request = ToolCallRequest(
+            tool_name=tool_name, arguments=frozen, raw_prompt_context=raw_prompt_context, agent_id=agent_id
+        )
         assessment = self.inspect(request)
 
         if assessment.decision == DecisionAction.BLOCK:
@@ -197,42 +199,35 @@ class SentinelGateway:
                 "assessment": assessment.model_dump(),
             }
 
-        if assessment.decision == DecisionAction.REQUIRE_APPROVAL and assessment.approval_id:
-            # Wait for human approval
+        if assessment.decision == DecisionAction.REQUIRE_APPROVAL:
+            if not assessment.approval_id:
+                raise RuntimeError("REQUIRE_APPROVAL without an approval id")
             req = await self.approval.wait_for_decision(assessment.approval_id)
-            if req.status != ApprovalStatus.APPROVED:
+            if req.status != ApprovalStatus.APPROVED or not req.approval_token:
                 self.ledger.append(
-                    event_type="APPROVAL_REJECTED",
-                    payload={"approval_id": req.id, "tool_name": tool_name},
+                    event_type=f"APPROVAL_{req.status.value}",
+                    payload={"approval_id": req.id, "tool_name": tool_name, "by": req.resolved_by},
                 )
                 return {
                     "success": False,
                     "blocked": True,
-                    "rejected_by_human": True,
-                    "reason": "Human operator rejected the execution request or approval timed out.",
+                    "rejected_by_human": req.status == ApprovalStatus.REJECTED,
+                    "reason": f"Approval {req.status.value.lower()} ({req.resolved_by}).",
                     "assessment": assessment.model_dump(),
                 }
+            current = ToolCallRequest(tool_name=tool_name, arguments=arguments)
+            try:
+                self.approval.redeem(req.id, req.approval_token, current)
+            except DigestMismatch:
+                self.ledger.append("APPROVAL_DIGEST_MISMATCH", {"approval_id": req.id, "tool_name": tool_name})
+                raise
             self.ledger.append(
                 event_type="APPROVAL_GRANTED",
                 payload={"approval_id": req.id, "tool_name": tool_name, "approver": req.resolved_by},
             )
 
-        # If allowed or approved, execute the real function
         try:
-            if callable(executor_func):
-                result = executor_func(**arguments)
-            else:
-                result = executor_func
-            return {
-                "success": True,
-                "blocked": False,
-                "result": result,
-                "assessment": assessment.model_dump(),
-            }
+            result = executor_func(**frozen) if callable(executor_func) else executor_func
         except Exception as exc:
-            return {
-                "success": False,
-                "blocked": False,
-                "error": str(exc),
-                "assessment": assessment.model_dump(),
-            }
+            return {"success": False, "blocked": False, "error": str(exc), "assessment": assessment.model_dump()}
+        return {"success": True, "blocked": False, "result": result, "assessment": assessment.model_dump()}

@@ -50,5 +50,5 @@ async def test_approval_timeout():
     # Wait for decision with very short timeout
     resolved = await coordinator.wait_for_decision(app_req.id, timeout=0.1)
 
-    assert resolved.status == ApprovalStatus.REJECTED
+    assert resolved.status == ApprovalStatus.EXPIRED  # a timeout is not a human rejection
     assert resolved.resolved_by == "system-timeout"

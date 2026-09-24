@@ -1,29 +1,38 @@
-services:
-  sentinel-dashboard:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    container_name: sentinel-dashboard
-    ports:
-      - "8501:8501"
-    volumes:
-      - sentinel-data:/data
-    environment:
-      SENTINEL_HOME: /data
-    restart: unless-stopped
+# One shared SENTINEL_HOME volume: the API owns the ledger and approval store; the dashboard is an
+# HTTP client of the API. Put real keys in a .env file next to this compose file.
+x-keys: &keys
+  SENTINEL_AGENT_KEY: ${SENTINEL_AGENT_KEY:?set SENTINEL_AGENT_KEY}
+  SENTINEL_APPROVER_KEY: ${SENTINEL_APPROVER_KEY:?set SENTINEL_APPROVER_KEY}
 
+services:
   sentinel-api:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: sentinel-api
     command: ["uvicorn", "sentinel.server.app:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
+    environment:
+      <<: *keys
+      SENTINEL_HOME: /data
+      SENTINEL_LEDGER_KEY: ${SENTINEL_LEDGER_KEY:?set SENTINEL_LEDGER_KEY}
+      SENTINEL_APPROVAL_KEY: ${SENTINEL_APPROVAL_KEY:?set SENTINEL_APPROVAL_KEY}
+      SENTINEL_WEBHOOK_URL: ${SENTINEL_WEBHOOK_URL:-}
     volumes:
       - sentinel-data:/data
+    restart: unless-stopped
+
+  sentinel-dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8501:8501"
     environment:
-      SENTINEL_HOME: /data
+      <<: *keys
+      SENTINEL_API_URL: http://sentinel-api:8000
+    depends_on:
+      - sentinel-api
     restart: unless-stopped
 
 volumes:

@@ -78,7 +78,11 @@ class ApprovalRequest(BaseModel):
     created_at: float = Field(default_factory=time.time)
     resolved_at: float | None = None
     resolved_by: str | None = None
-    approval_token: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    call_digest: str = ""
+    """sha256 of the canonical (tool, arguments) the human is approving."""
+    approval_token: str | None = None
+    """HMAC(id|digest|expiry|approver), issued only on APPROVED; redeemable once, for this digest only."""
+    token_expires_at: float | None = None
 
 
 class AuditRecord(BaseModel):
