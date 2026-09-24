@@ -68,6 +68,18 @@ class RiskAssessment(BaseModel):
     reason: str
 
 
+class ResultAssessment(BaseModel):
+    """Verdict on a tool's OUTPUT before it goes back to the model."""
+
+    tool_name: str
+    untrusted: bool
+    """Output came from a policy taint source (web, email, files): treat as data, never as instructions."""
+    injection_detected: bool
+    findings: list[DetectorFinding] = Field(default_factory=list)
+    sanitized_text: str
+    """What to hand the model: untrusted output is wrapped in explicit data delimiters."""
+
+
 class ApprovalRequest(BaseModel):
     """Represents a paused tool call waiting for human authorization."""
 
@@ -124,6 +136,9 @@ class PolicyConfig(BaseModel):
     require_approval_tools: list[str]
     sensitive_paths: list[str]
     blocked_commands: list[str]
+    taint_sources: list[str]
+    taint_sinks: dict[str, Literal["high", "low"]]
+    taint_min_match: int = Field(ge=8)
 
     @model_validator(mode="before")
     @classmethod

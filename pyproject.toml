@@ -80,6 +80,6 @@ ignore = ["B008", "E501", "UP006", "UP035"]
 
 [tool.mypy]
 python_version = "3.10"
-packages = ["sentinel.core", "sentinel.detectors", "sentinel.normalize"]
+packages = ["sentinel.core", "sentinel.detectors", "sentinel.normalize", "sentinel.taint"]
 strict = true
 plugins = ["pydantic.mypy"]

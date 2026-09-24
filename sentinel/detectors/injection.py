@@ -14,6 +14,7 @@ class InjectionDetector:
     """Scans tool calls and context for direct/indirect prompt injection signatures."""
 
     NAME = "prompt_injection_detector"
+    SCANS_OUTPUT = True  # also run by gateway.inspect_result on tool outputs
 
     # Every pattern is bounded ({0,N}) and never requires a distant closing token: an unbounded lazy
     # `.*?-->` rescans the rest of the input from every opener, which is O(n^2) (issue 1).
