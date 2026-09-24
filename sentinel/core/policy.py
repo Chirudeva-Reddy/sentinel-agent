@@ -2,81 +2,29 @@
 
 from __future__ import annotations
 
+from importlib.resources import files
 from pathlib import Path
 
 import yaml
 
 from sentinel.core.types import PolicyConfig
 
-DEFAULT_POLICY_YAML = """
-version: "1.0"
-safe_threshold: 30.0
-critical_threshold: 70.0
-
-# Tools not listed anywhere below get this decision floor (deny by default).
-unknown_tool_action: "REQUIRE_APPROVAL"
-
-# Hosts exempt from SSRF checks. Empty in the default policy; a dev policy might add "localhost".
-allowed_hosts: []
-
-# Known tools. Detectors still run on their arguments; listing a tool only lifts the unknown-tool floor.
-allowed_tools:
-  - "read_file"
-  - "view_file"
-  - "write_file"
-  - "search_web"
-  - "list_directory"
-  - "calculator"
-  - "get_weather"
-  - "summarize_text"
-  - "translate_text"
-  - "fetch_url"
-  - "execute_sql"
-  - "query_database"
-
-blocked_tools:
-  - "bypass_security"
-  - "dump_credentials"
-  - "arbitrary_eval"
-
-require_approval_tools:
-  - "execute_bash"
-  - "shell"
-  - "run_command"
-  - "run_shell"
-  - "terminal"
-  - "delete_file"
-  - "drop_database"
-  - "transfer_funds"
-  - "send_email"
-  - "git_push_force"
-
-sensitive_paths:
-  - "/etc/passwd"
-  - "/etc/shadow"
-  - "~/.ssh"
-  - "~/.aws"
-  - ".env"
-  - "id_rsa"
-  - "id_ed25519"
-  - "/var/run/docker.sock"
-
-# Extra substring signatures. Destructive shell commands (rm -r /, find / -delete, mkfs, dd of=/dev,
-# curl | sh, fork bombs) are detected by parsing argv in BlastRadiusDetector, not listed here.
-blocked_commands: []
-"""
-
 
 class PolicyEngine:
     """Evaluates requests against declared security policy."""
 
-    def __init__(self, config: PolicyConfig | None = None):
+    def __init__(self, config: PolicyConfig | None = None) -> None:
         self.config = config or self.load_default()
 
     @classmethod
     def load_default(cls) -> PolicyConfig:
-        data = yaml.safe_load(DEFAULT_POLICY_YAML)
-        return PolicyConfig(**data)
+        return PolicyConfig.model_validate({})
+
+    @classmethod
+    def from_profile(cls, name: str) -> PolicyEngine:
+        """Packaged profiles: default, dev, strict (sentinel/policies/<name>.yaml)."""
+        text = files("sentinel.policies").joinpath(f"{name}.yaml").read_text("utf-8")
+        return cls(PolicyConfig(**(yaml.safe_load(text) or {})))
 
     @classmethod
     def from_file(cls, path: str | Path) -> PolicyEngine:
@@ -84,7 +32,7 @@ class PolicyEngine:
         if not p.exists():
             raise FileNotFoundError(f"Policy file not found: {path}")
         with open(p, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            data = yaml.safe_load(f) or {}
         return cls(PolicyConfig(**data))
 
     @staticmethod

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import time
 from typing import Any
 
@@ -14,12 +15,24 @@ from sentinel.core.types import (
     RiskTier,
     ToolCallRequest,
 )
-from sentinel.detectors.argument_validator import ArgumentValidator
-from sentinel.detectors.blast_radius import BlastRadiusDetector
-from sentinel.detectors.injection import InjectionDetector
-from sentinel.normalize import normalize
-from sentinel.sandbox.approval import ApprovalCoordinator
+from sentinel.detectors import Detector, load_detectors
+from sentinel.normalize import NormalizedCall, normalize
+from sentinel.sandbox.approval import ApprovalCoordinator, DigestMismatch
 from sentinel.sandbox.ledger import AuditLedger
+
+
+def aggregate(scores: list[float], method: str = "noisy_or") -> float:
+    """Combine 0-100 detector scores. noisy_or treats them as independent evidence:
+    two medium signals from different detectors corroborate into a high one; max ignores corroboration."""
+    if not scores:
+        return 0.0
+    if method == "max":
+        return max(scores)
+    miss = 1.0
+    for s in scores:
+        miss *= 1 - min(max(s, 0.0), 100.0) / 100
+    return round((1 - miss) * 100, 4)
+
 
 _RANK = {
     DecisionAction.ALLOW: 0,
@@ -48,31 +61,52 @@ class SentinelGateway:
         policy: PolicyEngine | None = None,
         ledger: AuditLedger | None = None,
         approval_coordinator: ApprovalCoordinator | None = None,
-        auto_escalate_approval: bool = True,
-    ):
+        detectors: list[Detector] | None = None,
+    ) -> None:
         self.policy = policy or PolicyEngine()
         self.ledger = ledger or AuditLedger()
         self.approval = approval_coordinator or ApprovalCoordinator()
-        self.auto_escalate_approval = auto_escalate_approval
+        self.detectors = detectors if detectors is not None else load_detectors(self.policy)
 
-        # Initialize detector suite
-        self.injection_detector = InjectionDetector()
-        self.blast_radius_detector = BlastRadiusDetector(self.policy)
-        self.argument_validator = ArgumentValidator(self.policy)
+    def _run_detectors(self, call: NormalizedCall) -> list[DetectorFinding]:
+        """Runs every detector. A crash or a blown time budget is a SUSPICIOUS finding, never a skip."""
+        cfg = self.policy.config
+        suspicious = (cfg.safe_threshold + cfg.critical_threshold) / 2
+        findings = []
+        for det in self.detectors:
+            t0 = time.perf_counter()
+            try:
+                finding = det.analyze(call)
+            except Exception as exc:  # noqa: BLE001 - fail closed on any detector bug
+                finding = DetectorFinding(
+                    detector_name=det.NAME,
+                    risk_score=suspicious,
+                    severity=RiskTier.SUSPICIOUS,
+                    description=f"Detector error (fail closed): {type(exc).__name__}: {exc}",
+                    metadata={"error": True},
+                )
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            if elapsed_ms > cfg.detector_budget_ms and finding.risk_score < suspicious:
+                # ponytail: measured after the fact, Python can't pre-empt a running regex. Bounded
+                # patterns + the 64 KB input cap are what actually keep detectors fast.
+                finding = finding.model_copy(
+                    update={
+                        "risk_score": suspicious,
+                        "severity": RiskTier.SUSPICIOUS,
+                        "description": f"Detector exceeded {cfg.detector_budget_ms:.0f} ms budget ({elapsed_ms:.0f} ms)",
+                    }
+                )
+            findings.append(finding)
+        return findings
 
     def inspect(self, tool_call: ToolCallRequest) -> RiskAssessment:
         """Synchronously analyzes a tool call, computes risk scores and records audit logs."""
         start_time = time.perf_counter()
 
         call = normalize(tool_call)
-        findings: list[DetectorFinding] = [
-            self.injection_detector.analyze(call),
-            self.blast_radius_detector.analyze(call),
-            self.argument_validator.analyze(call),
-        ]
-
-        overall_score = round(max(f.risk_score for f in findings), 2)
+        findings = self._run_detectors(call)
         cfg = self.policy.config
+        overall_score = round(aggregate([f.risk_score for f in findings], cfg.aggregation), 2)
         if overall_score >= cfg.critical_threshold:
             tier = RiskTier.CRITICAL
         elif overall_score >= cfg.safe_threshold:
@@ -146,14 +180,15 @@ class SentinelGateway:
         raw_prompt_context: str | None = None,
         agent_id: str = "agent-alpha",
     ) -> dict[str, Any]:
-        """Convenience method: intercepts, requests approval if critical, and executes only if approved."""
-        request = ToolCallRequest(
-            tool_name=tool_name,
-            arguments=arguments,
-            raw_prompt_context=raw_prompt_context,
-            agent_id=agent_id,
-        )
+        """Intercept, wait for approval if required, then execute exactly the call that was checked.
 
+        The arguments are deep-copied at inspection time and only that copy is executed. If the
+        caller's dict changed while a human was deciding, the approval is refused (DigestMismatch).
+        """
+        frozen = copy.deepcopy(arguments)
+        request = ToolCallRequest(
+            tool_name=tool_name, arguments=frozen, raw_prompt_context=raw_prompt_context, agent_id=agent_id
+        )
         assessment = self.inspect(request)
 
         if assessment.decision == DecisionAction.BLOCK:
@@ -164,42 +199,35 @@ class SentinelGateway:
                 "assessment": assessment.model_dump(),
             }
 
-        if assessment.decision == DecisionAction.REQUIRE_APPROVAL and assessment.approval_id:
-            # Wait for human approval
+        if assessment.decision == DecisionAction.REQUIRE_APPROVAL:
+            if not assessment.approval_id:
+                raise RuntimeError("REQUIRE_APPROVAL without an approval id")
             req = await self.approval.wait_for_decision(assessment.approval_id)
-            if req.status != ApprovalStatus.APPROVED:
+            if req.status != ApprovalStatus.APPROVED or not req.approval_token:
                 self.ledger.append(
-                    event_type="APPROVAL_REJECTED",
-                    payload={"approval_id": req.id, "tool_name": tool_name},
+                    event_type=f"APPROVAL_{req.status.value}",
+                    payload={"approval_id": req.id, "tool_name": tool_name, "by": req.resolved_by},
                 )
                 return {
                     "success": False,
                     "blocked": True,
-                    "rejected_by_human": True,
-                    "reason": "Human operator rejected the execution request or approval timed out.",
+                    "rejected_by_human": req.status == ApprovalStatus.REJECTED,
+                    "reason": f"Approval {req.status.value.lower()} ({req.resolved_by}).",
                     "assessment": assessment.model_dump(),
                 }
+            current = ToolCallRequest(tool_name=tool_name, arguments=arguments)
+            try:
+                self.approval.redeem(req.id, req.approval_token, current)
+            except DigestMismatch:
+                self.ledger.append("APPROVAL_DIGEST_MISMATCH", {"approval_id": req.id, "tool_name": tool_name})
+                raise
             self.ledger.append(
                 event_type="APPROVAL_GRANTED",
                 payload={"approval_id": req.id, "tool_name": tool_name, "approver": req.resolved_by},
             )
 
-        # If allowed or approved, execute the real function
         try:
-            if callable(executor_func):
-                result = executor_func(**arguments)
-            else:
-                result = executor_func
-            return {
-                "success": True,
-                "blocked": False,
-                "result": result,
-                "assessment": assessment.model_dump(),
-            }
+            result = executor_func(**frozen) if callable(executor_func) else executor_func
         except Exception as exc:
-            return {
-                "success": False,
-                "blocked": False,
-                "error": str(exc),
-                "assessment": assessment.model_dump(),
-            }
+            return {"success": False, "blocked": False, "error": str(exc), "assessment": assessment.model_dump()}
+        return {"success": True, "blocked": False, "result": result, "assessment": assessment.model_dump()}

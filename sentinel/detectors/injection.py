@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import re
 
+from sentinel.core.policy import PolicyEngine
 from sentinel.core.types import DetectorFinding, RiskTier, ToolCallRequest
 from sentinel.normalize import NormalizedCall, normalize
 
@@ -44,7 +45,8 @@ class InjectionDetector:
         r"(?i)\[//\]:\s*#\s*\([^)\n]{0,500}?(ignore|override|secret)",
     ]
 
-    def __init__(self, sensitivity: float = 1.0) -> None:
+    def __init__(self, policy: PolicyEngine | None = None, sensitivity: float = 1.0) -> None:
+        self.policy = policy or PolicyEngine()
         self.sensitivity = sensitivity
         self.compiled_overrides = [re.compile(p) for p in self.OVERRIDE_PATTERNS]
         self.compiled_exfil = [re.compile(p) for p in self.EXFILTRATION_PATTERNS]
@@ -103,10 +105,10 @@ class InjectionDetector:
         # Cap score at 100.0
         final_score = min(100.0, score * self.sensitivity)
 
-        if final_score >= 70.0:
+        if final_score >= self.policy.config.critical_threshold:
             severity = RiskTier.CRITICAL
             desc = "High-confidence prompt injection or exfiltration vector detected."
-        elif final_score >= 30.0:
+        elif final_score >= self.policy.config.safe_threshold:
             severity = RiskTier.SUSPICIOUS
             desc = "Suspicious prompt override or evasion indicators observed."
         else:

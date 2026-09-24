@@ -1,9 +1,8 @@
 """Tamper-evident audit ledger: HMAC-chained, sequenced, head-anchored, file-locked, secrets redacted.
 
 Threat model: detects edits, deletions, reordering, truncation and re-hashed rewrites by anyone who
-does not hold the ledger key. ponytail: the key defaults to $SENTINEL_HOME/ledger.key, next to the
-log; in production set SENTINEL_LEDGER_KEY from a secret store so log writers can't read it, and ship
-head checkpoints off-host if deleting the whole ledger (log + head) must also be detectable.
+does not hold the ledger key (SENTINEL_LEDGER_KEY, see settings.secret_key). ponytail: ship head
+checkpoints off-host if deleting the whole ledger (log + head) must also be detectable.
 """
 
 from __future__ import annotations
@@ -12,16 +11,14 @@ import contextlib
 import hashlib
 import hmac
 import json
-import os
 import re
-import secrets
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from sentinel.core.types import AuditRecord
-from sentinel.settings import sentinel_home
+from sentinel.settings import secret_key, sentinel_home
 
 try:
     import fcntl
@@ -64,24 +61,6 @@ def redact(obj: Any, key: str = "") -> Any:
     return obj
 
 
-# --- key -----------------------------------------------------------------------------------------
-
-
-def ledger_key() -> bytes:
-    env = os.environ.get("SENTINEL_LEDGER_KEY")
-    if env:
-        return env.encode()
-    path = sentinel_home() / "ledger.key"
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        return path.read_bytes()
-    with os.fdopen(fd, "wb") as f:
-        key = secrets.token_hex(32).encode()
-        f.write(key)
-    return key
-
-
 # --- ledger --------------------------------------------------------------------------------------
 
 
@@ -91,7 +70,7 @@ class AuditLedger:
     def __init__(self, log_path: Path | None = None):
         self.log_path = Path(log_path) if log_path else sentinel_home() / "audit.jsonl"
         self.head_path = self.log_path.with_name(self.log_path.name + ".head")
-        self._key = ledger_key()
+        self._key = secret_key("ledger")
         self.records: list[AuditRecord] = []
         self._offset = 0
         self._load_new()
