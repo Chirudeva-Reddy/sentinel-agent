@@ -17,6 +17,7 @@ from rich.table import Table
 from sentinel.core.gateway import SentinelGateway
 from sentinel.core.types import RiskAssessment, RiskTier, ToolCallRequest
 from sentinel.sandbox.ledger import AuditLedger
+from sentinel.settings import sentinel_home
 
 app = typer.Typer(
     name="sentinel",
@@ -86,9 +87,12 @@ def inspect(
 
 @app.command()
 def verify_ledger(
-    path: Path = typer.Option(Path("audit.jsonl"), "--path", "-p", help="Path to audit ledger"),
+    path: Path | None = typer.Option(
+        None, "--path", "-p", help="Path to audit ledger (default $SENTINEL_HOME/audit.jsonl)"
+    ),
 ):
     """Cryptographically verify the integrity of the audit log."""
+    path = path or sentinel_home() / "audit.jsonl"
     if not path.exists():
         rprint(f"[yellow]No audit ledger found at {path}. Run tool calls first.[/yellow]")
         raise typer.Exit(0)

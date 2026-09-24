@@ -163,7 +163,7 @@ class SentinelGateway:
                 "assessment": assessment.model_dump(),
             }
 
-        if assessment.decision == DecisionAction.REQUIRE_APPROVAL:
+        if assessment.decision == DecisionAction.REQUIRE_APPROVAL and assessment.approval_id:
             # Wait for human approval
             req = await self.approval.wait_for_decision(assessment.approval_id)
             if req.status != ApprovalStatus.APPROVED:

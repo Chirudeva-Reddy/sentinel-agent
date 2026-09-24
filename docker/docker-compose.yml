@@ -7,7 +7,9 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ../audit.jsonl:/app/audit.jsonl
+      - sentinel-data:/data
+    environment:
+      SENTINEL_HOME: /data
     restart: unless-stopped
 
   sentinel-api:
@@ -19,5 +21,10 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ../audit.jsonl:/app/audit.jsonl
+      - sentinel-data:/data
+    environment:
+      SENTINEL_HOME: /data
     restart: unless-stopped
+
+volumes:
+  sentinel-data:
