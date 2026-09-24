@@ -98,3 +98,19 @@ async def test_notifier_called_for_pending():
     coord = ApprovalCoordinator(ApprovalStore(":memory:"), notifier=seen.append)
     SentinelGateway(approval_coordinator=coord).inspect(RM)
     assert len(seen) == 1 and seen[0].tool_call.tool_name == "execute_bash"
+
+
+async def test_token_signed_with_another_key_blocks_instead_of_crashing(monkeypatch):
+    coord = ApprovalCoordinator(ApprovalStore(":memory:"))
+    gw = SentinelGateway(approval_coordinator=coord)
+
+    def approve_with_foreign_key(req):
+        coord._key = b"some-other-deployment"  # approver misconfigured with a different key
+        coord.resolve(req.id, approve=True, approver="elsewhere")
+        coord._key = b"the-real-key"
+        return True
+
+    coord.register_cli_handler(approve_with_foreign_key)
+    ran = []
+    out = await gw.execute_gated("execute_bash", {"command": "ls"}, lambda command: ran.append(command))
+    assert out["blocked"] and "could not be verified" in out["reason"] and ran == []

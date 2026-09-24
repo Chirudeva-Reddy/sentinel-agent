@@ -19,6 +19,9 @@ server = [
     "fastapi>=0.110.0",
     "uvicorn>=0.29.0",
 ]
+mcp = [
+    "mcp>=1.9.0",
+]
 dashboard = [
     "streamlit>=1.35.0",
     "httpx>=0.27.0",
@@ -50,6 +53,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sentinel"]
+exclude = ["sentinel/server/dashboard\\.py"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -66,7 +70,7 @@ source = ["sentinel"]
 omit = ["sentinel/server/dashboard.py"]
 
 [tool.coverage.report]
-fail_under = 85
+fail_under = 90
 show_missing = true
 
 [tool.ruff]
@@ -80,6 +84,7 @@ ignore = ["B008", "E501", "UP006", "UP035"]
 
 [tool.mypy]
 python_version = "3.10"
-packages = ["sentinel.core", "sentinel.detectors", "sentinel.normalize", "sentinel.taint"]
+packages = ["sentinel"]
+exclude = ["sentinel/server/dashboard\\.py"]
 strict = true
 plugins = ["pydantic.mypy"]

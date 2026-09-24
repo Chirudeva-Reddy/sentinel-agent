@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import json
 import time
 from typing import Any
@@ -19,7 +20,7 @@ from sentinel.core.types import (
 )
 from sentinel.detectors import Detector, load_detectors
 from sentinel.normalize import MAX_INPUT_CHARS, NormalizedCall, canonical_text, normalize
-from sentinel.sandbox.approval import ApprovalCoordinator, DigestMismatch
+from sentinel.sandbox.approval import ApprovalCoordinator, ApprovalError, DigestMismatch
 from sentinel.sandbox.ledger import AuditLedger
 from sentinel.taint import TaintTracker
 
@@ -302,6 +303,16 @@ class SentinelGateway:
             except DigestMismatch:
                 self.ledger.append("APPROVAL_DIGEST_MISMATCH", {"approval_id": req.id, "tool_name": tool_name})
                 raise
+            except ApprovalError as exc:  # e.g. approver signed with a different SENTINEL_APPROVAL_KEY
+                self.ledger.append(
+                    "APPROVAL_INVALID", {"approval_id": req.id, "tool_name": tool_name, "error": str(exc)}
+                )
+                return {
+                    "success": False,
+                    "blocked": True,
+                    "reason": f"Approval could not be verified: {exc}.",
+                    "assessment": assessment.model_dump(),
+                }
             self.ledger.append(
                 event_type="APPROVAL_GRANTED",
                 payload={"approval_id": req.id, "tool_name": tool_name, "approver": req.resolved_by},
@@ -309,6 +320,8 @@ class SentinelGateway:
 
         try:
             result = executor_func(**frozen) if callable(executor_func) else executor_func
+            if inspect.isawaitable(result):
+                result = await result
         except Exception as exc:
             return {"success": False, "blocked": False, "error": str(exc), "assessment": assessment.model_dump()}
         guard = self.inspect_result(request, result)
