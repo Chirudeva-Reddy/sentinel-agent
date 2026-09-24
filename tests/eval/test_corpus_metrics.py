@@ -28,3 +28,10 @@ def test_benchmarks_doc_is_generated_from_code():
     if os.environ.get("SENTINEL_UPDATE_SNAPSHOT"):
         DOC.write_text(md)
     assert DOC.read_text() == md, "docs/BENCHMARKS.md is stale: run `sentinel eval --markdown > docs/BENCHMARKS.md`"
+
+
+def test_eval_has_no_side_effects(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("SENTINEL_HOME", str(home))
+    evaluate()
+    assert not home.exists() or not any(home.iterdir())

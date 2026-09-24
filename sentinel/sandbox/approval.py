@@ -134,13 +134,14 @@ class ApprovalCoordinator:
         token_ttl: float = 300.0,
         poll_interval: float = 0.2,
         notifier: Notifier | None = None,
+        key: bytes | None = None,
     ) -> None:
         self.store = store or ApprovalStore()
         self.default_timeout = default_timeout
         self.token_ttl = token_ttl
         self.poll_interval = poll_interval
         self.notifier = notifier
-        self._key = secret_key("approval")
+        self._key = key or secret_key("approval")
         self.cli_prompt_handler: Callable[[ApprovalRequest], bool] | None = None
 
     def register_cli_handler(self, handler: Callable[[ApprovalRequest], bool]) -> None:

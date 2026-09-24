@@ -10,6 +10,7 @@ Three attack rates, because they answer different questions:
 
 from __future__ import annotations
 
+import secrets
 import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -66,8 +67,8 @@ def evaluate(gateway: SentinelGateway | None = None) -> Report:
         with tempfile.TemporaryDirectory(prefix="sentinel-eval-") as tmp:
             return evaluate(
                 SentinelGateway(
-                    ledger=AuditLedger(Path(tmp) / "audit.jsonl"),
-                    approval_coordinator=ApprovalCoordinator(ApprovalStore(":memory:")),
+                    ledger=AuditLedger(Path(tmp) / "audit.jsonl", key=secrets.token_bytes(32)),
+                    approval_coordinator=ApprovalCoordinator(ApprovalStore(":memory:"), key=secrets.token_bytes(32)),
                 )
             )
     gw = gateway

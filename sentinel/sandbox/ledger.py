@@ -67,10 +67,10 @@ def redact(obj: Any, key: str = "") -> Any:
 class AuditLedger:
     """Append-only JSONL where record n commits (via HMAC) to record n-1 and to its own sequence number."""
 
-    def __init__(self, log_path: Path | None = None):
+    def __init__(self, log_path: Path | None = None, key: bytes | None = None):
         self.log_path = Path(log_path) if log_path else sentinel_home() / "audit.jsonl"
         self.head_path = self.log_path.with_name(self.log_path.name + ".head")
-        self._key = secret_key("ledger")
+        self._key = key or secret_key("ledger")
         self.records: list[AuditRecord] = []
         self._offset = 0
         self._load_new()
