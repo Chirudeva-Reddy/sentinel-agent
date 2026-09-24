@@ -31,11 +31,19 @@ def secret_key(name: str) -> bytes:
         with os.fdopen(fd, "wb") as f:
             f.write(secrets.token_hex(32).encode())
         try:
-            os.link(tmp, path)
-        except FileExistsError:
-            pass
+            if hasattr(os, "link"):
+                try:
+                    os.link(tmp, path)
+                except FileExistsError:
+                    pass
+                except (AttributeError, OSError, NotImplementedError):
+                    if not path.exists():
+                        os.replace(tmp, path)
+            else:
+                if not path.exists():
+                    os.replace(tmp, path)
         finally:
-            tmp.unlink()
+            tmp.unlink(missing_ok=True)
     key = path.read_bytes()
     if len(key) < 32:
         raise RuntimeError(f"{path} is empty or truncated; delete it (or set SENTINEL_{name.upper()}_KEY) and retry")
