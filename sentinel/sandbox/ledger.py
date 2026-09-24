@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from sentinel.core.types import AuditRecord
+from sentinel.settings import sentinel_home
 
 GENESIS_HASH = "0" * 64
 
@@ -17,7 +18,7 @@ class AuditLedger:
     """Tamper-evident audit log where each entry cryptographically commits to the entire history."""
 
     def __init__(self, log_path: Path | None = None):
-        self.log_path = log_path or Path("audit.jsonl")
+        self.log_path = log_path or sentinel_home() / "audit.jsonl"
         self.records: list[AuditRecord] = []
         self._load_records()
 

@@ -42,7 +42,7 @@ class ArgumentValidator:
         r"192\.168\.\d{1,3}\.\d{1,3}",  # Private IP range
     ]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.compiled_cmd = [re.compile(p, re.IGNORECASE) for p in self.CMD_INJECTION_PATTERNS]
         self.compiled_path = [re.compile(p, re.IGNORECASE) for p in self.PATH_TRAVERSAL_PATTERNS]
         self.compiled_ssrf = [re.compile(p, re.IGNORECASE) for p in self.SSRF_PATTERNS]

@@ -25,3 +25,7 @@ dist/
 .vscode/
 *.swp
 .DS_Store
+
+# Runtime state
+audit.jsonl
+.sentinel/

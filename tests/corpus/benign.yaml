@@ -1,0 +1,86 @@
+- id: calc
+  tool: calculator
+  args:
+    expression: 100 + 42
+- id: weather
+  tool: get_weather
+  args:
+    city: Hyderabad
+- id: read_pkg
+  tool: read_file
+  args:
+    path: package.json
+- id: read_src
+  tool: read_file
+  args:
+    path: src/app/main.py
+- id: list_dir
+  tool: list_directory
+  args:
+    path: ./docs
+- id: search_papers
+  tool: search_web
+  args:
+    query: latest agentic AI safety papers
+- id: search_jailbreak_research
+  tool: search_web
+  args:
+    query: jailbreak papers 2025 survey
+- id: summarize
+  tool: summarize_text
+  args:
+    text: The quarterly report shows revenue grew 12% year over year.
+- id: ls
+  tool: execute_bash
+  args:
+    command: ls -la
+- id: git_status
+  tool: execute_bash
+  args:
+    command: git status
+- id: pytest
+  tool: execute_bash
+  args:
+    command: pytest -q tests/
+- id: quiet_build
+  tool: execute_bash
+  args:
+    command: make build > /dev/null
+- id: sql_select
+  tool: execute_sql
+  args:
+    query: SELECT id, name FROM users WHERE active = true LIMIT 10;
+- id: sql_delete_where
+  tool: execute_sql
+  args:
+    query: DELETE FROM sessions WHERE expires_at < now();
+- id: fetch_docs
+  tool: fetch_url
+  args:
+    url: https://docs.python.org/3/library/ipaddress.html
+- id: fetch_localhost_dev
+  tool: fetch_url
+  args:
+    url: http://localhost:3000/health
+- id: classifier_tool
+  tool: jailbreak_classifier
+  args:
+    text: What is the capital of France?
+- id: write_notes
+  tool: write_file
+  args:
+    path: notes/todo.md
+    content: '- review PR
+
+      - update docs'
+- id: send_team_email
+  tool: send_email
+  args:
+    to: team@example.com
+    subject: Standup notes
+    body: See attached.
+- id: translate
+  tool: translate_text
+  args:
+    text: Bonjour tout le monde
+    target: en
