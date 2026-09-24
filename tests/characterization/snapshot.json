@@ -47,6 +47,10 @@
   75.0,
   "REQUIRE_APPROVAL"
  ],
+ "attacks/eval_wipe": [
+  100.0,
+  "REQUIRE_APPROVAL"
+ ],
  "attacks/find_delete_root": [
   100.0,
   "REQUIRE_APPROVAL"
@@ -103,6 +107,10 @@
   47.75,
   "WARN_AND_ALLOW"
  ],
+ "attacks/nested_shell_wipe": [
+  100.0,
+  "REQUIRE_APPROVAL"
+ ],
  "attacks/netcat_exfil": [
   100.0,
   "REQUIRE_APPROVAL"
@@ -135,6 +143,14 @@
   100.0,
   "REQUIRE_APPROVAL"
  ],
+ "attacks/schemeless_imds_ssrf": [
+  76.0,
+  "REQUIRE_APPROVAL"
+ ],
+ "attacks/schemeless_redis_ssrf": [
+  76.0,
+  "REQUIRE_APPROVAL"
+ ],
  "attacks/ssh_key_read": [
   70.0,
   "REQUIRE_APPROVAL"
@@ -143,7 +159,15 @@
   100.0,
   "REQUIRE_APPROVAL"
  ],
+ "attacks/sudo_flags_wipe": [
+  100.0,
+  "REQUIRE_APPROVAL"
+ ],
  "attacks/sudo_rm_usr": [
+  100.0,
+  "REQUIRE_APPROVAL"
+ ],
+ "attacks/timeout_wrapped_wipe": [
   100.0,
   "REQUIRE_APPROVAL"
  ],
@@ -168,6 +192,10 @@
   "WARN_AND_ALLOW"
  ],
  "benign/calc": [
+  5.0,
+  "ALLOW"
+ ],
+ "benign/calc_fraction": [
   5.0,
   "ALLOW"
  ],
@@ -203,9 +231,17 @@
   20.0,
   "ALLOW"
  ],
+ "benign/fetch_public_schemeless": [
+  20.0,
+  "ALLOW"
+ ],
  "benign/fetch_query_params": [
   20.0,
   "ALLOW"
+ ],
+ "benign/git_rm_cached": [
+  55.0,
+  "REQUIRE_APPROVAL"
  ],
  "benign/git_status": [
   55.0,
@@ -230,6 +266,10 @@
  "benign/nested_args": [
   20.0,
   "ALLOW"
+ ],
+ "benign/nested_shell_ls": [
+  55.0,
+  "REQUIRE_APPROVAL"
  ],
  "benign/npm_test": [
   55.0,
@@ -318,6 +358,10 @@
  "benign/sql_update_where": [
   25.0,
   "ALLOW"
+ ],
+ "benign/sudo_apt_list": [
+  55.0,
+  "REQUIRE_APPROVAL"
  ],
  "benign/summarize": [
   20.0,

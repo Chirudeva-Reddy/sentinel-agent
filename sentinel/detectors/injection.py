@@ -55,13 +55,19 @@ class InjectionDetector:
 
     def _check_base64_payloads(self, text: str) -> tuple[str, str] | None:
         """Finds base64 strings whose decoded contents contain override/exfiltration signatures."""
-        for cand in re.findall(r"[A-Za-z0-9+/]{16,}={0,2}", text)[:50]:
+        # Decode every candidate (no cap: decoys in front must not hide the payload), then run each pattern once
+        # over the joined text. Input is already capped at 64 KB, so this stays linear.
+        decoded_parts = []
+        for cand in re.findall(r"[A-Za-z0-9+/]{16,}={0,2}", text):
             try:
-                decoded = base64.b64decode(cand, validate=True).decode("utf-8", errors="ignore")
+                decoded_parts.append(base64.b64decode(cand, validate=True).decode("utf-8", errors="ignore"))
             except ValueError:
                 continue
-            if any(p.search(decoded) for p in self.compiled_overrides + self.compiled_exfil):
-                return cand, decoded
+        decoded = "\n".join(decoded_parts)
+        for p in self.compiled_overrides + self.compiled_exfil:
+            m = p.search(decoded)
+            if m:
+                return m.group(0), decoded[max(0, m.start() - 20) : m.end() + 30]
         return None
 
     def analyze(self, request: ToolCallRequest | NormalizedCall) -> DetectorFinding:

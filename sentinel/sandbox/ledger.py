@@ -81,10 +81,13 @@ class AuditLedger:
             return
         with open(self.log_path, "rb") as f:
             f.seek(self._offset)
-            for raw in f:
+            while True:
+                raw = f.readline()
+                if not raw.endswith(b"\n"):
+                    break  # EOF, or another writer's append still in progress: pick it up next time
                 if raw.strip():
                     self.records.append(AuditRecord(**json.loads(raw)))
-            self._offset = f.tell()
+                self._offset = f.tell()
 
     @contextlib.contextmanager
     def _locked(self) -> Iterator[None]:
@@ -140,7 +143,15 @@ class AuditLedger:
         return record
 
     def verify_integrity(self) -> tuple[bool, str | None]:
-        """Checks the chain, sequence and MACs, then that the last record matches the signed head."""
+        """Checks the chain, sequence and MACs, then that the last record matches the signed head.
+
+        Reads under the writers' lock, after catching up with records other processes appended, so the log
+        and the head are compared at one consistent point."""
+        with self._locked():
+            self._load_new()
+            return self._verify_loaded()
+
+    def _verify_loaded(self) -> tuple[bool, str | None]:
         expected_prev = GENESIS_HASH
         for idx, rec in enumerate(self.records):
             if rec.seq != idx:

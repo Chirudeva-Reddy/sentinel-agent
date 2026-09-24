@@ -23,11 +23,20 @@ def secret_key(name: str) -> bytes:
     if env:
         return env.encode()
     path = sentinel_home() / f"{name}.key"
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        return path.read_bytes()
-    key = secrets.token_hex(32).encode()
-    with os.fdopen(fd, "wb") as f:
-        f.write(key)
+    if not path.exists():
+        # Write the whole key to a private temp file, then link it into place: link() is atomic and never
+        # overwrites, so a concurrent first run either wins or reads the winner's complete key.
+        tmp = path.with_name(f".{name}.key.{os.getpid()}.{secrets.token_hex(4)}")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(secrets.token_hex(32).encode())
+        try:
+            os.link(tmp, path)
+        except FileExistsError:
+            pass
+        finally:
+            tmp.unlink()
+    key = path.read_bytes()
+    if len(key) < 32:
+        raise RuntimeError(f"{path} is empty or truncated; delete it (or set SENTINEL_{name.upper()}_KEY) and retry")
     return key

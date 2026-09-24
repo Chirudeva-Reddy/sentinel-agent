@@ -7,11 +7,11 @@ Do not edit by hand: `tests/eval/test_corpus_metrics.py` fails if this file drif
 
 | Metric | Value |
 |---|---|
-| Attack cases | 42 |
+| Attack cases | 48 |
 | Flagged (SUSPICIOUS or worse) | 100% |
-| Stopped on detector evidence alone (CRITICAL) | 88% |
-| Stopped under default policy (incl. deny-by-default) | 93% |
-| Benign cases | 50 |
+| Stopped on detector evidence alone (CRITICAL) | 90% |
+| Stopped under default policy (incl. deny-by-default) | 94% |
+| Benign cases | 55 |
 | False positives (stricter than expected) | 0% |
 
 Latency is machine-dependent and is not recorded here; the CI `benchmark` job publishes it.
@@ -22,7 +22,7 @@ Latency is machine-dependent and is not recorded here; the CI `benchmark` job pu
 |---|---|---|---|
 | command_injection | 3 | 3 | 3 |
 | credential_access | 1 | 1 | 1 |
-| destructive_command | 9 | 9 | 9 |
+| destructive_command | 13 | 13 | 13 |
 | destructive_sql | 3 | 3 | 3 |
 | exfiltration | 2 | 2 | 2 |
 | jailbreak | 2 | 2 | 2 |
@@ -30,7 +30,7 @@ Latency is machine-dependent and is not recorded here; the CI `benchmark` job pu
 | path_traversal | 3 | 3 | 3 |
 | prompt_injection | 6 | 6 | 3 |
 | remote_code_execution | 2 | 2 | 2 |
-| ssrf | 8 | 8 | 8 |
+| ssrf | 10 | 10 | 10 |
 
 ## Known misses (not CRITICAL on detector evidence)
 

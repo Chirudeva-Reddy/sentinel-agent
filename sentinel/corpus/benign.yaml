@@ -238,3 +238,29 @@
     command: grep -rn TODO src/ | head -20
   expect: REQUIRE_APPROVAL
   why: tool is require_approval by policy
+- id: calc_fraction
+  tool: calculator
+  args:
+    expression: 42/7
+- id: fetch_public_schemeless
+  tool: fetch_url
+  args:
+    url: docs.python.org/3/library/ipaddress.html
+- id: git_rm_cached
+  tool: execute_bash
+  args:
+    command: git rm -r --cached build
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
+- id: sudo_apt_list
+  tool: execute_bash
+  args:
+    command: sudo -u www apt list --installed
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy
+- id: nested_shell_ls
+  tool: execute_bash
+  args:
+    command: sh -c 'ls -la'
+  expect: REQUIRE_APPROVAL
+  why: tool is require_approval by policy

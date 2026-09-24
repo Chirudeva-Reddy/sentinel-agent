@@ -80,7 +80,9 @@ SENTINEL_API_URL=http://localhost:8000 sentinel dashboard
 ```
 
 Agents call `POST /api/v1/intercept`, poll `GET /api/v1/approvals/{id}`, and exchange the token at
-`POST /api/v1/approvals/{id}/redeem` before running the tool. Approvers use `/approvals/pending` and `/resolve`.
+`POST /api/v1/approvals/{id}/redeem` before running the tool. They send tool output to `POST /api/v1/results`
+(same `session_id`) and give the model the returned `sanitized_text`, which is what feeds taint tracking.
+Approvers use `/approvals/pending` and `/resolve`.
 
 ### In Python
 
