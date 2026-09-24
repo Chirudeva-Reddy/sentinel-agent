@@ -62,6 +62,11 @@ class ApprovalStore:
             " token_used INTEGER NOT NULL DEFAULT 0)"
         )
 
+    def close(self) -> None:
+        self._db.close()
+
+    __del__ = close
+
     def add(self, req: ApprovalRequest) -> None:
         with self._lock:
             self._db.execute(
