@@ -198,6 +198,23 @@ def benchmark(
     console.print(table)
 
 
+@app.command()
+def demo(
+    offline: bool = typer.Option(False, "--offline", help="Replay scripted model turns (no API key needed)"),
+    approve_escalations: bool = typer.Option(
+        False, "--approve-escalations", help="Non-interactive: approve what the reviewer escalates"
+    ),
+) -> None:
+    """Multi-agent demo: researcher + mailer + reviewer Claude agents behind one gateway."""
+    from sentinel.demo import main
+
+    result = main(offline=offline, approve_escalations=approve_escalations, interactive=sys.stdin.isatty())
+    console.print("\n[bold]Outbox[/bold]")
+    for mail in result["outbox"] or [{"to": "(nothing sent)", "subject": ""}]:
+        console.print(f"  -> {mail['to']}: {mail['subject']}")
+    console.print(f"[bold]Ledger[/bold]: {len(result['ledger_events'])} events, valid={result['ledger_valid']}")
+
+
 @app.command(name="eval")
 def eval_corpus(
     markdown: bool = typer.Option(False, "--markdown", help="Print docs/BENCHMARKS.md content"),
