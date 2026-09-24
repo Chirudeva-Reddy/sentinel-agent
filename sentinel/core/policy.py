@@ -13,12 +13,26 @@ version: "1.0"
 safe_threshold: 30.0
 critical_threshold: 70.0
 
+# Tools not listed anywhere below get this decision floor (deny by default).
+unknown_tool_action: "REQUIRE_APPROVAL"
+
+# Hosts exempt from SSRF checks. Empty in the default policy; a dev policy might add "localhost".
+allowed_hosts: []
+
+# Known tools. Detectors still run on their arguments; listing a tool only lifts the unknown-tool floor.
 allowed_tools:
   - "read_file"
+  - "view_file"
+  - "write_file"
   - "search_web"
   - "list_directory"
   - "calculator"
   - "get_weather"
+  - "summarize_text"
+  - "translate_text"
+  - "fetch_url"
+  - "execute_sql"
+  - "query_database"
 
 blocked_tools:
   - "bypass_security"
@@ -29,6 +43,8 @@ require_approval_tools:
   - "execute_bash"
   - "shell"
   - "run_command"
+  - "run_shell"
+  - "terminal"
   - "delete_file"
   - "drop_database"
   - "transfer_funds"
@@ -45,13 +61,9 @@ sensitive_paths:
   - "id_ed25519"
   - "/var/run/docker.sock"
 
-blocked_commands:
-  - "rm -rf /"
-  - "rm -rf *"
-  - "mkfs"
-  - "dd if="
-  - ":(){ :|:& };:"
-  - "chmod -R 777 /"
+# Extra substring signatures. Destructive shell commands (rm -r /, find / -delete, mkfs, dd of=/dev,
+# curl | sh, fork bombs) are detected by parsing argv in BlastRadiusDetector, not listed here.
+blocked_commands: []
 """
 
 
@@ -75,11 +87,22 @@ class PolicyEngine:
             data = yaml.safe_load(f)
         return cls(PolicyConfig(**data))
 
+    @staticmethod
+    def _fold(tool_name: str) -> str:
+        return tool_name.strip().lower()
+
+    def _in(self, tool_name: str, tools: list[str]) -> bool:
+        return self._fold(tool_name) in {self._fold(t) for t in tools}
+
     def is_tool_blocked(self, tool_name: str) -> bool:
-        return tool_name in self.config.blocked_tools
+        return self._in(tool_name, self.config.blocked_tools)
 
     def does_tool_require_approval(self, tool_name: str) -> bool:
-        return tool_name in self.config.require_approval_tools
+        return self._in(tool_name, self.config.require_approval_tools)
+
+    def is_tool_known(self, tool_name: str) -> bool:
+        c = self.config
+        return self._in(tool_name, c.allowed_tools + c.require_approval_tools + c.blocked_tools)
 
     def is_sensitive_path(self, target_path: str) -> bool:
         target = target_path.strip().lower()

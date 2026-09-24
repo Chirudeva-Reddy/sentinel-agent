@@ -7,7 +7,7 @@ import uuid
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RiskTier(str, Enum):
@@ -82,7 +82,10 @@ class ApprovalRequest(BaseModel):
 class AuditRecord(BaseModel):
     """Cryptographically chained ledger record for tamper-evident auditing."""
 
+    model_config = ConfigDict(extra="forbid")
+
     record_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    seq: int = 0
     timestamp: str
     previous_hash: str
     current_hash: str
@@ -95,6 +98,10 @@ class PolicyConfig(BaseModel):
 
     safe_threshold: float = 30.0
     critical_threshold: float = 70.0
+    unknown_tool_action: DecisionAction = DecisionAction.REQUIRE_APPROVAL
+    """Decision floor for tools not listed in allowed/require_approval/blocked. Never ALLOW (deny by default)."""
+    allowed_hosts: list[str] = Field(default_factory=list)
+    """Hostnames/IPs exempt from SSRF checks, e.g. ["localhost"] for a dev policy."""
     allowed_tools: list[str] = Field(default_factory=list)
     blocked_tools: list[str] = Field(default_factory=list)
     require_approval_tools: list[str] = Field(
