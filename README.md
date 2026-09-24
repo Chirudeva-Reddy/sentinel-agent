@@ -2,16 +2,20 @@
 
 # 🛡️ SentinelAgent
 
-**A deny-by-default security gateway, human-approval sandbox and MCP proxy for AI agents**
+**Guard your agents' tool calls.** A deny-by-default security gateway, human-approval sandbox and MCP proxy for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/sentinel-agent-gateway.svg)](https://pypi.org/project/sentinel-agent-gateway/)
 [![CI](https://github.com/Chirudeva-Reddy/sentinel-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Chirudeva-Reddy/sentinel-agent/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.14-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/LICENSE)
 
-**[Live demo: runs in your browser](https://chirudeva-reddy.github.io/sentinel-agent/)** · `pip install sentinel-agent-gateway`
+**[Try it live](https://chirudeva-reddy.github.io/sentinel-agent/)**: the real gateway and the multi-agent demo, running in your browser.
 
-[Why](#why) • [Quickstart](#quickstart) • [How it works](#how-it-works) • [Evaluation](#evaluation) • [Architecture](docs/ARCHITECTURE.md)
+```bash
+pip install sentinel-agent-gateway
+```
+
+[Architecture](https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/ARCHITECTURE.md)
 
 </div>
 
@@ -135,11 +139,11 @@ flowchart LR
     O --> L
 ```
 
-Details, threat model and limits: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Details, threat model and limits: [docs/ARCHITECTURE.md](https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/ARCHITECTURE.md).
 
 ## Evaluation
 
-All numbers come from [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md), which `sentinel eval --markdown` generates from
+All numbers come from [`docs/BENCHMARKS.md`](https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/BENCHMARKS.md), which `sentinel eval --markdown` generates from
 the corpora in `sentinel/corpus/`. A test fails if the file and the code disagree. On the current 42 attack / 50 benign cases:
 every attack is flagged, 88% are stopped by detector evidence alone, and there are no false positives. Known misses are listed there.
 
@@ -148,7 +152,7 @@ the CI `benchmark` job (`pytest -m benchmark`).
 
 ## Development
 
-See [AGENTS.md](AGENTS.md) for the workflow (tests first, one regression test per bug, generated docs).
+See [AGENTS.md](https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/AGENTS.md) for the workflow (tests first, one regression test per bug, generated docs).
 
 ```bash
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov
@@ -156,4 +160,4 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pyt
 
 ## License
 
-[Apache 2.0](LICENSE)
+[Apache 2.0](https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/LICENSE)

@@ -3,120 +3,342 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SentinelAgent</title>
-<meta name="description" content="A deny-by-default security gateway for AI agents, running live in your browser.">
+<title>SentinelAgent: a security gateway for AI agents</title>
+<meta name="description" content="A deny-by-default gateway for AI agents. Risky calls wait for a human, and untrusted tool output is tracked. Runs live in your browser.">
+<meta property="og:title" content="SentinelAgent">
+<meta property="og:description" content="A deny-by-default security gateway for AI agents, running live in your browser.">
+<meta name="color-scheme" content="dark light">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5.3.0/index.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/geist-mono@5.3.0/index.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/light/style.css">
 <style>
+  /* Tokens. Dark first, light via prefers-color-scheme. One accent (emerald); red/amber only carry decision state.
+     Radius rule: shells 28px, cores 22px, fields 12px, every interactive control is a full pill. */
   :root {
-    --bg: #fafaf9; --panel: #ffffff; --ink: #1c1917; --muted: #57534e; --line: #e7e5e4;
-    --accent: #0f766e; --allow: #15803d; --warn: #b45309; --stop: #b91c1c; --code: #f5f5f4;
+    --bg: #070a09; --ink: #ecf1ef; --muted: #8f9c97; --faint: #5f6b67;
+    --shell: rgba(255,255,255,.035); --shell-line: rgba(255,255,255,.07);
+    --core: #0c1110; --core-hi: rgba(255,255,255,.06); --line: rgba(255,255,255,.07);
+    --field: #080c0b; --accent: #3ecf9a; --accent-soft: rgba(62,207,154,.12); --on-accent: #03140d;
+    --stop: #f47a7a; --warn: #f2bd4b; --glow: rgba(62,207,154,.10);
+    --ease: cubic-bezier(.32,.72,0,1);
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #0c0a09; --panel: #1c1917; --ink: #f5f5f4; --muted: #a8a29e; --line: #292524;
-            --accent: #2dd4bf; --allow: #4ade80; --warn: #fbbf24; --stop: #f87171; --code: #292524; }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f3f5f4; --ink: #0e1613; --muted: #4f5d58; --faint: #7a8782;
+      --shell: rgba(14,22,19,.035); --shell-line: rgba(14,22,19,.07);
+      --core: #fbfcfb; --core-hi: rgba(255,255,255,.9); --line: rgba(14,22,19,.08);
+      --field: #f1f4f2; --accent: #0b7a55; --accent-soft: rgba(11,122,85,.10); --on-accent: #f4fbf8;
+      --stop: #b42323; --warn: #9a5b06; --glow: rgba(11,122,85,.08);
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
-  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.02em; }
-  h2 { font-size: 1.15rem; margin: 0 0 4px; }
-  p { margin: 0 0 12px; }
-  .lede { color: var(--muted); max-width: 720px; }
-  .links a { color: var(--accent); margin-right: 16px; font-weight: 600; text-decoration: none; }
-  .links a:hover { text-decoration: underline; }
-  .status { margin: 20px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px;
-            background: var(--panel); color: var(--muted); font-size: 0.92rem; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-            padding: 20px; margin-top: 20px; }
-  .hint { color: var(--muted); font-size: 0.92rem; }
-  label { display: block; font-size: 0.85rem; font-weight: 600; margin: 12px 0 4px; }
-  input, textarea, select { width: 100%; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
-         color: var(--ink); background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
-  textarea { resize: vertical; }
-  button { margin-top: 14px; font: 600 14px system-ui, sans-serif; color: #fff; background: var(--accent);
-           border: 0; border-radius: 6px; padding: 9px 16px; cursor: pointer; }
-  button:disabled { opacity: 0.5; cursor: wait; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
-  .badge { display: inline-block; font: 700 13px ui-monospace, monospace; padding: 3px 8px; border-radius: 4px;
-           color: #fff; }
-  .ALLOW { background: var(--allow); } .WARN_AND_ALLOW { background: var(--warn); }
-  .REQUIRE_APPROVAL, .BLOCK { background: var(--stop); }
-  pre, .log { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code);
-              border-radius: 6px; padding: 12px; margin: 12px 0 0; white-space: pre-wrap; word-break: break-word;
-              max-height: 420px; overflow: auto; }
-  .log div.reviewer { color: var(--warn); } .log div.human { color: var(--allow); }
-  .log div.stop { color: var(--stop); }
-  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 0.92rem; }
-  td { padding: 6px 4px; border-bottom: 1px solid var(--line); } td:last-child { text-align: right; font-weight: 700; }
-  ul.findings { margin: 8px 0 0; padding-left: 18px; font-size: 0.9rem; }
-  footer { margin-top: 32px; color: var(--muted); font-size: 0.88rem; }
-  code { font-family: ui-monospace, monospace; font-size: 0.92em; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); -webkit-font-smoothing: antialiased;
+         font: 400 16px/1.6 "Geist Variable", system-ui, sans-serif; }
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(60rem 40rem at 12% -10%, var(--glow), transparent 60%),
+                radial-gradient(40rem 30rem at 100% 30%, var(--glow), transparent 65%); }
+  code, pre, .mono, input, textarea, select { font-family: "Geist Mono Variable", ui-monospace, monospace; }
+  a { color: inherit; }
+  .wrap { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+  i.ph-light { font-size: 1.15em; line-height: 0; vertical-align: -0.15em; }
+
+  /* Floating island nav (fixed, so blur is allowed) */
+  nav { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex;
+        align-items: center; gap: 4px; padding: 6px 6px 6px 16px; border-radius: 999px; white-space: nowrap;
+        background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--shell-line);
+        backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%); }
+  nav .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: -0.01em;
+               text-decoration: none; margin-right: 12px; }
+  nav .brand i { color: var(--accent); font-size: 1.3em; }
+  nav a.link { text-decoration: none; color: var(--muted); font-size: 14px; padding: 8px 12px; border-radius: 999px;
+               transition: color .4s var(--ease), background .4s var(--ease); }
+  nav a.link:hover { color: var(--ink); background: var(--shell); }
+  @media (max-width: 640px) { nav a.link.optional { display: none; } }
+
+  /* Buttons: pills, with the trailing icon in its own circle */
+  .btn { display: inline-flex; align-items: center; gap: 12px; height: 48px; padding: 0 6px 0 22px; border-radius: 999px;
+         border: 0; cursor: pointer; font: 500 15px "Geist Variable", sans-serif; text-decoration: none; white-space: nowrap;
+         transition: transform .5s var(--ease), background .5s var(--ease), opacity .3s var(--ease); }
+  .btn:active { transform: scale(.98); }
+  .btn .knob { width: 36px; height: 36px; border-radius: 999px; display: grid; place-items: center;
+               transition: transform .5s var(--ease); }
+  .btn:hover .knob { transform: translate(2px, -1px) scale(1.05); }
+  .btn.primary { background: var(--accent); color: var(--on-accent); }
+  .btn.primary .knob { background: color-mix(in srgb, var(--on-accent) 14%, transparent); }
+  .btn.ghost { background: var(--shell); color: var(--ink); border: 1px solid var(--shell-line); padding-right: 22px; }
+  .btn:disabled { opacity: .45; cursor: progress; }
+  .btn.small { height: 40px; padding-left: 18px; font-size: 14px; }
+  .btn.small .knob { width: 30px; height: 30px; }
+
+  /* Double bezel: an outer tray and an inner core with concentric radii */
+  .shell { background: var(--shell); border: 1px solid var(--shell-line); border-radius: 28px; padding: 6px; }
+  .core { background: var(--core); border-radius: 22px; box-shadow: inset 0 1px 0 var(--core-hi); padding: 24px; }
+
+  /* Hero: editorial split, the live inspector is the visual */
+  .hero { min-height: 100dvh; display: grid; grid-template-columns: 1.1fr 1fr; gap: 56px; align-items: center;
+          padding: 112px 0 64px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase;
+          color: var(--accent); background: var(--accent-soft); padding: 6px 12px; border-radius: 999px; }
+  h1 { font-size: clamp(2.6rem, 4.6vw, 4.2rem); line-height: 1.02; letter-spacing: -0.035em; font-weight: 600;
+       margin: 22px 0 20px; max-width: 21ch; text-wrap: balance; }
+  .lede { font-size: 1.15rem; color: var(--muted); max-width: 44ch; margin: 0 0 32px; }
+  .ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  .inspector .top { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .inspector .title { white-space: nowrap; }
+  .inspector .title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .runtime { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .runtime .live { width: 7px; height: 7px; border-radius: 999px; background: var(--faint); transition: background .6s var(--ease); }
+  .runtime.ready .live { background: var(--accent); }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6px; }
+  input, textarea, select { width: 100%; font-size: 13.5px; color: var(--ink); background: var(--field);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; outline: none;
+    transition: border-color .4s var(--ease), box-shadow .4s var(--ease); }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  textarea { resize: vertical; min-height: 64px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1.6fr; gap: 12px; }
+  .verdict { margin-top: 18px; min-height: 148px; border-top: 1px solid var(--line); padding-top: 18px; }
+  .decision { display: inline-flex; align-items: center; gap: 8px; font: 600 13px "Geist Mono Variable", monospace;
+              padding: 6px 12px; border-radius: 999px; }
+  .d-ALLOW { color: var(--accent); background: var(--accent-soft); }
+  .d-WARN_AND_ALLOW { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .d-REQUIRE_APPROVAL, .d-BLOCK { color: var(--stop); background: color-mix(in srgb, var(--stop) 14%, transparent); }
+  .meta { font-size: 13px; color: var(--muted); margin-left: 10px; }
+  .reason { font-size: 14px; margin: 12px 0 8px; }
+  .findings { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+  .skeleton { height: 14px; border-radius: 999px; margin: 10px 0; background: linear-gradient(90deg, var(--shell) 20%, var(--core-hi) 50%, var(--shell) 80%);
+              background-size: 200% 100%; animation: shimmer 1.6s var(--ease) infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* Install strip */
+  .install { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .install code { font-size: 15px; }
+  .install .hint { color: var(--muted); font-size: 14px; }
+  .copy { background: none; border: 1px solid var(--shell-line); color: var(--ink); border-radius: 999px; height: 36px;
+          padding: 0 14px; cursor: pointer; font: 500 13px "Geist Variable", sans-serif; display: inline-flex; gap: 6px; align-items: center; }
+
+  section { padding: 120px 0; }
+  h2 { font-size: clamp(2rem, 3.4vw, 2.9rem); letter-spacing: -0.03em; line-height: 1.05; font-weight: 600; margin: 0 0 16px; max-width: 18ch; }
+  .sub { color: var(--muted); max-width: 60ch; margin: 0 0 48px; font-size: 1.05rem; }
+
+  /* Asymmetric bento: 4 items, 4 cells */
+  .bento { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  .bento .shell { display: flex; } .bento .core { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  /* Grid/flex children default to min-width:auto, which lets a long code line widen the page on phones */
+  .hero > *, .bento > *, .core, .b-ledger .text, .snippet { min-width: 0; }
+  .b-out { grid-column: span 7; grid-row: span 2; }
+  .b-in { grid-column: span 5; } .b-hitl { grid-column: span 5; } .b-ledger { grid-column: span 12; }
+  .bento h3 { margin: 0; font-size: 1.25rem; letter-spacing: -0.02em; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .bento h3 i { color: var(--accent); font-size: 1.4rem; }
+  .bento p { margin: 0; color: var(--muted); font-size: 15px; max-width: 52ch; }
+  .b-out .core { background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 9%, var(--core)) 0%, var(--core) 55%); }
+  .b-in .core { background-color: var(--core);
+    background-image: radial-gradient(color-mix(in srgb, var(--accent) 22%, transparent) 1px, transparent 1.2px);
+    background-size: 18px 18px; background-position: -9px -9px; }
+  .b-ledger .core { background: linear-gradient(90deg, var(--core) 40%, color-mix(in srgb, var(--accent) 7%, var(--core)) 100%);
+                    flex-direction: row; align-items: center; gap: 32px; }
+  .b-ledger .text { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  .snippet { margin: auto 0 0; font-size: 12.5px; line-height: 1.65; color: var(--muted); background: var(--field);
+             border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; white-space: pre; overflow-x: auto; }
+  .snippet b { color: var(--ink); font-weight: 500; }
+  .b-ledger .snippet { margin: 0; flex: 1.2; }
+
+  /* Agents console */
+  .roster { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 12px 40px; margin: 0 0 32px; }
+  .agent { display: flex; gap: 12px; align-items: flex-start; }
+  .agent i { font-size: 1.5rem; color: var(--accent); margin-top: 2px; }
+  .agent b { display: block; font-weight: 600; } .agent span { color: var(--muted); font-size: 14px; }
+  .console-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .console-head .mono { color: var(--muted); font-size: 13px; }
+  .log { font: 13px/1.7 "Geist Mono Variable", monospace; min-height: 280px; max-height: 460px; overflow: auto;
+         background: var(--field); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; white-space: pre-wrap; word-break: break-word; }
+  .log .empty { color: var(--faint); }
+  .log div { opacity: 0; transform: translateY(6px); animation: line .5s var(--ease) forwards; }
+  @keyframes line { to { opacity: 1; transform: none; } }
+  .log .reviewer { color: var(--warn); } .log .human, .log .ok { color: var(--accent); } .log .stop { color: var(--stop); }
+  .outcome { margin-top: 16px; font-size: 15px; min-height: 24px; }
+
+  /* Evaluation: numbers breathe in plain layout */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; border-top: 1px solid var(--line); padding-top: 40px; }
+  .stat .num { font: 600 clamp(2.4rem, 4.4vw, 3.6rem)/1 "Geist Mono Variable", monospace; letter-spacing: -0.04em; }
+  .stat .num.muted { color: var(--faint); }
+  .stat .lbl { color: var(--muted); font-size: 14.5px; margin-top: 12px; max-width: 22ch; }
+  .fine { color: var(--muted); font-size: 14px; margin-top: 32px; }
+  .fine a { color: var(--accent); }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0 56px; color: var(--muted); font-size: 14px;
+           display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  footer a { color: var(--ink); text-decoration: none; margin-left: 20px; }
+  footer a:hover { color: var(--accent); }
+
+  /* Scroll entry */
+  .reveal { opacity: 0; transform: translateY(28px); filter: blur(6px);
+            transition: opacity .9s var(--ease), transform .9s var(--ease), filter .9s var(--ease); }
+  .reveal.in { opacity: 1; transform: none; filter: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal { opacity: 1; transform: none; filter: none; transition: none; }
+    .log div { animation: none; opacity: 1; transform: none; }
+    .skeleton { animation: none; }
+    .btn, .btn .knob { transition: none; }
+  }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; gap: 40px; padding-top: 104px; min-height: auto; }
+    .bento { grid-template-columns: 1fr; }
+    .b-out, .b-in, .b-hitl, .b-ledger { grid-column: auto; grid-row: auto; }
+    .b-ledger .core { flex-direction: column; align-items: stretch; }
+    .roster { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    section { padding: 80px 0; }
+  }
+  @media (max-width: 480px) {
+    .wrap { padding: 0 16px; } .core { padding: 18px; } .row2 { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>🛡️ SentinelAgent</h1>
-  <p class="lede">A deny-by-default security gateway for AI agents. It checks tool calls going out, guards tool
-  output coming back, and holds risky calls for a human. This page runs the real <code>sentinel</code> package
-  from <code>main</code> in your browser with Pyodide. No server, nothing leaves the page.</p>
-  <p class="links">
-    <a href="https://github.com/Chirudeva-Reddy/sentinel-agent">GitHub</a>
-    <a href="https://pypi.org/project/sentinel-agent-gateway/">PyPI</a>
-    <a href="https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/ARCHITECTURE.md">Architecture</a>
-    <a href="https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/BENCHMARKS.md">Benchmarks</a>
-  </p>
-  <div class="status" id="status">Loading the Python runtime…</div>
+<nav aria-label="Primary">
+  <a class="brand" href="#top"><i class="ph-light ph-shield-check"></i>SentinelAgent</a>
+  <a class="link optional" href="#how">How it works</a>
+  <a class="link optional" href="#agents">Agents</a>
+  <a class="link optional" href="#evaluation">Evaluation</a>
+  <a class="link" href="https://github.com/Chirudeva-Reddy/sentinel-agent" aria-label="GitHub"><i class="ph-light ph-github-logo"></i></a>
+</nav>
 
-  <section>
-    <h2>Try the gateway</h2>
-    <p class="hint">Pick an attack or benign call from the evaluation corpus, or write your own.</p>
-    <div class="grid">
-      <div>
-        <label for="preset">Preset</label>
-        <select id="preset"></select>
-        <label for="tool">Tool name</label>
-        <input id="tool" value="run_shell">
-        <label for="args">Arguments (JSON)</label>
-        <textarea id="args" rows="4">{"cmd": "rm -r -f /"}</textarea>
-        <label for="ctx">Context (optional)</label>
-        <textarea id="ctx" rows="2"></textarea>
-        <button id="inspect" disabled>Inspect</button>
+<main class="wrap" id="top">
+  <header class="hero">
+    <div class="reveal">
+      <span class="pill">Open-source agent security</span>
+      <h1>Guard your agents’ tool calls.</h1>
+      <p class="lede">A deny-by-default gateway for AI agents. Risky calls wait for a human, and untrusted tool output is tracked.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#agents">Run the agents <span class="knob"><i class="ph-light ph-arrow-up-right"></i></span></a>
+        <a class="btn ghost" href="https://github.com/Chirudeva-Reddy/sentinel-agent"><i class="ph-light ph-github-logo"></i>GitHub</a>
       </div>
-      <div id="verdict" class="hint">The decision will appear here.</div>
+    </div>
+
+    <div class="shell inspector reveal" aria-label="Live gateway inspector">
+      <div class="core">
+        <div class="top">
+          <span class="title"><i class="ph-light ph-magnifying-glass"></i>Inspect a tool call</span>
+          <span class="runtime" id="runtime"><span class="live"></span><span id="runtime-text">Starting Python in your browser</span></span>
+        </div>
+        <label for="preset">Example from the evaluation corpus</label>
+        <select id="preset" disabled><option>Loading…</option></select>
+        <div class="row2">
+          <div><label for="tool">Tool</label><input id="tool" value="run_shell" spellcheck="false"></div>
+          <div><label for="args">Arguments (JSON)</label><input id="args" value='{"cmd": "rm -r -f /"}' spellcheck="false"></div>
+        </div>
+        <label for="ctx">Context the agent saw (optional)</label>
+        <textarea id="ctx" rows="2" spellcheck="false" placeholder="Paste a web page or email the agent read"></textarea>
+        <div style="margin-top:16px"><button class="btn primary small" id="inspect" disabled>Inspect <span class="knob"><i class="ph-light ph-play"></i></span></button></div>
+        <div class="verdict" id="verdict" aria-live="polite">
+          <div class="skeleton" style="width:38%"></div><div class="skeleton" style="width:86%"></div><div class="skeleton" style="width:64%"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="shell reveal">
+    <div class="core install">
+      <code id="pip">pip install sentinel-agent-gateway</code>
+      <span class="hint">Python 3.10+. Import name <code>sentinel</code>.</span>
+      <button class="copy" id="copy"><i class="ph-light ph-copy"></i><span>Copy</span></button>
+    </div>
+  </div>
+
+  <section id="how">
+    <h2 class="reveal">Checks both directions of every call.</h2>
+    <p class="sub reveal">Attacks on agents arrive in what tools return, not just in what the agent asks to do. Sentinel covers both, then asks a person.</p>
+    <div class="bento">
+      <div class="shell b-out reveal"><div class="core">
+        <h3><i class="ph-light ph-funnel"></i>Calls going out</h3>
+        <p>Arguments are normalised, then scored by pluggable detectors. Shell is parsed into argv, so <code>rm -r -f /</code> is caught under any tool name. URL hosts are parsed as IP addresses, so decimal, hex and IPv6 forms can't slip past the SSRF check.</p>
+        <p>The policy can only make a decision stricter. Unknown tools wait for approval by default.</p>
+        <div class="snippet"><b>unknown_tool_action:</b> "REQUIRE_APPROVAL"
+<b>aggregation:</b> "noisy_or"
+<b>taint_sinks:</b>
+  send_email: "high"
+  execute_bash: "high"</div>
+      </div></div>
+      <div class="shell b-in reveal"><div class="core">
+        <h3><i class="ph-light ph-fingerprint"></i>Output coming back</h3>
+        <p>Web pages, emails and files are fenced as untrusted data and fingerprinted. If that text reaches a high-risk tool later in the session, a human decides.</p>
+      </div></div>
+      <div class="shell b-hitl reveal"><div class="core">
+        <h3><i class="ph-light ph-user-check"></i>One call, one approval</h3>
+        <p>An approval is an HMAC token bound to a digest of the exact arguments. It expires, works once, and fails if anything changed while you were deciding.</p>
+      </div></div>
+      <div class="shell b-ledger reveal"><div class="core">
+        <div class="text">
+          <h3><i class="ph-light ph-seal-check"></i>A signed audit trail</h3>
+          <p>Every decision is appended to an HMAC-chained ledger with sequence numbers and a signed head, so edits, deletions and truncation are all detected. Secrets are redacted before anything is written.</p>
+        </div>
+        <div class="snippet" id="ledger-sample" aria-live="polite"><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:90%"></div><div class="skeleton" style="width:55%"></div></div>
+      </div></div>
     </div>
   </section>
 
-  <section>
-    <h2>Multi-agent demo</h2>
-    <p class="hint">A researcher agent and a mailer agent summarise a release-notes page that contains a hidden
-    instruction to email the customer list to an outside address. A reviewer agent screens every held call and
-    can only reject or escalate. The model turns are scripted here, and the researcher is written to fall for the
-    injection. Everything else (gateway, taint tracking, approvals, audit ledger) is the real code. Escalations are
-    auto-approved as the human.</p>
-    <button id="demo" disabled>Run the demo</button>
-    <div class="log" id="log" hidden></div>
+  <section id="agents">
+    <h2 class="reveal">Three agents, one gateway.</h2>
+    <p class="sub reveal">They summarise a release-notes page with a hidden instruction to email the customer list out. Model turns are scripted here; the gateway is the real code.</p>
+    <div class="roster reveal">
+      <div class="agent"><i class="ph-light ph-robot"></i><div><b>Researcher</b><span>fetch_url, read_file</span></div></div>
+      <div class="agent"><i class="ph-light ph-envelope-simple"></i><div><b>Mailer</b><span>send_email</span></div></div>
+      <div class="agent"><i class="ph-light ph-user-check"></i><div><b>Reviewer</b><span>can reject or escalate, never approve</span></div></div>
+    </div>
+    <div class="shell reveal"><div class="core">
+      <div class="console-head">
+        <span class="mono">Task: research the Q3 notes, email team@example.com a summary</span>
+        <button class="btn primary small" id="demo" disabled>Run the agents <span class="knob"><i class="ph-light ph-play"></i></span></button>
+      </div>
+      <div class="log" id="log" aria-live="polite"><div class="empty">Press run to watch the agents work. A person approves what the reviewer escalates; here that step is automatic.</div></div>
+      <div class="outcome" id="outcome"></div>
+    </div></div>
   </section>
 
-  <section>
-    <h2>Evaluation</h2>
-    <p class="hint">Runs <code>sentinel eval</code> on the bundled corpora: attacks and benign calls under the default policy.</p>
-    <button id="eval" disabled>Run evaluation</button>
-    <div id="metrics"></div>
+  <section id="evaluation">
+    <h2 class="reveal">Measured, not claimed.</h2>
+    <p class="sub reveal">Computed just now in this tab from the bundled corpus of attack and benign tool calls, under the default policy.</p>
+    <div class="stats reveal" id="stats">
+      <div class="stat"><div class="num muted" data-k="flagged_rate">…</div><div class="lbl">of attacks flagged</div></div>
+      <div class="stat"><div class="num muted" data-k="detector_stop_rate">…</div><div class="lbl">stopped on detector evidence alone</div></div>
+      <div class="stat"><div class="num muted" data-k="policy_stop_rate">…</div><div class="lbl">stopped under the default policy</div></div>
+      <div class="stat"><div class="num muted" data-k="false_positive_rate">…</div><div class="lbl">false positives on benign calls</div></div>
+    </div>
+    <p class="fine reveal" id="counts">The corpus is small and hand-written, so treat these as regression numbers. <a href="https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/BENCHMARKS.md">Known misses and method</a>.</p>
   </section>
 
   <footer>
-    The approval API, the dashboard and the MCP proxy need a server. Run them with
-    <code>docker compose -f docker/docker-compose.yml up</code> or
-    <code>pip install "sentinel-agent-gateway[server,dashboard,mcp]"</code>.
+    <span>Everything above runs in your browser with Pyodide. The approval API, dashboard and MCP proxy need a server.</span>
+    <span>
+      <a href="https://pypi.org/project/sentinel-agent-gateway/">PyPI</a>
+      <a href="https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+      <a href="https://github.com/Chirudeva-Reddy/sentinel-agent">GitHub</a>
+    </span>
   </footer>
 </main>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const status = (text) => { $("status").textContent = text; };
 let py;
+
+// Scroll entry (IntersectionObserver, no scroll listeners)
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+}, { threshold: 0.12 });
+document.querySelectorAll(".reveal").forEach((el, i) => { el.style.transitionDelay = `${Math.min(i % 4, 3) * 70}ms`; io.observe(el); });
+
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("pip").textContent); $("copy").lastChild.textContent = "Copied"; }
+  catch { $("copy").lastChild.textContent = "Select and copy"; }
+  setTimeout(() => { $("copy").lastChild.textContent = "Copy"; }, 1800);
+};
 
 const SETUP = `
 import json, os
@@ -131,8 +353,8 @@ def presets():
     out = []
     for kind in ("attacks", "benign"):
         for c in cases(kind):
-            out.append({"label": f"{kind[:-1] if kind == 'attacks' else 'benign'}: {c['id']}", "tool": c["tool"],
-                        "args": c.get("args", {}), "context": c.get("context") or ""})
+            out.append({"label": f"{'attack' if kind == 'attacks' else 'benign'}: {c['id'].replace('_', ' ')}",
+                        "tool": c["tool"], "args": c.get("args", {}), "context": c.get("context") or ""})
     return json.dumps(out)
 
 def inspect(tool, args_json, context):
@@ -145,118 +367,116 @@ def inspect(tool, args_json, context):
     a = gateway.inspect(ToolCallRequest(tool_name=tool, arguments=args, raw_prompt_context=context or None))
     return a.model_dump_json()
 
+def ledger_sample():
+    # A real record: this call goes through the gateway and the entry below is read back from its ledger.
+    gateway.inspect(ToolCallRequest(tool_name="send_email",
+                                    arguments={"to": "ops@example.com", "api_key": "sk-live-51HqLyjWDarjtT1zdp7dcXYZ"}))
+    r = gateway.ledger.get_recent(1)[0]
+    return json.dumps({"seq": r.seq, "event": r.event_type, "tool": r.payload["tool_name"],
+                       "score": r.payload["overall_score"], "api_key": r.payload["arguments"]["api_key"],
+                       "prev": r.previous_hash, "mac": r.current_hash, "valid": gateway.ledger.verify_integrity()[0]})
+
 def metrics():
     return json.dumps(evaluate().metrics)
 `;
 
-function badge(decision) {
-  const b = document.createElement("span");
-  b.className = "badge " + decision;
-  b.textContent = decision;
-  return b;
-}
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 
 function showVerdict(a) {
   const box = $("verdict");
   box.replaceChildren();
-  box.className = "";
-  if (a.error) { box.textContent = a.error; return; }
-  const head = document.createElement("p");
-  head.append(badge(a.decision), ` score ${a.overall_score}/100 · ${a.tier} · ${a.latency_ms} ms`);
-  const reason = document.createElement("p");
-  reason.textContent = a.reason;
-  const list = document.createElement("ul");
-  list.className = "findings";
-  for (const f of a.findings) {
-    for (const m of f.matched_patterns) {
-      const li = document.createElement("li");
-      li.textContent = `${f.detector_name}: ${m}`;
-      list.append(li);
-    }
-  }
-  box.append(head, reason);
+  if (a.error) { box.append(el("p", "reason", a.error)); return; }
+  const head = el("div");
+  head.append(el("span", "decision d-" + a.decision, a.decision.replaceAll("_", " ")),
+              el("span", "meta", `score ${a.overall_score} of 100, ${a.latency_ms} ms`));
+  const list = el("ul", "findings");
+  for (const f of a.findings) for (const m of f.matched_patterns) list.append(el("li", null, m));  // text only
+  box.append(head, el("p", "reason", a.reason));
   if (list.children.length) box.append(list);
 }
 
+function runInspect() { showVerdict(JSON.parse(py.globals.get("inspect")($("tool").value, $("args").value, $("ctx").value))); }
+
 async function boot() {
+  const say = (t) => { $("runtime-text").textContent = t; };
   try {
     py = await loadPyodide();
-    status("Loading pydantic and pyyaml…");
+    say("Loading pydantic and pyyaml");
     await py.loadPackage(["micropip", "pydantic", "pyyaml"]);
-    status("Installing the sentinel wheel…");
+    say("Installing the sentinel wheel");
     const wheel = (await (await fetch("wheels/latest.txt")).text()).trim();
-    const micropip = py.pyimport("micropip");
-    await micropip.install(new URL("wheels/" + wheel, location.href).href, { deps: false });
+    await py.pyimport("micropip").install(new URL("wheels/" + wheel, location.href).href, { deps: false });
     await py.runPythonAsync(SETUP);
+
     const presets = JSON.parse(py.globals.get("presets")());
     const select = $("preset");
-    select.append(Object.assign(document.createElement("option"), { value: "", textContent: "custom (edit the fields below)" }));
-    presets.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p.label; select.append(o); });
+    select.replaceChildren(el("option", null, "Custom: edit the fields below"));
+    select.firstChild.value = "";
+    presets.forEach((p, i) => { const o = el("option", null, p.label); o.value = i; select.append(o); });
     select.onchange = () => {
       if (select.value === "") return;
       const p = presets[select.value];
-      $("tool").value = p.tool; $("args").value = JSON.stringify(p.args, null, 1); $("ctx").value = p.context;
+      $("tool").value = p.tool; $("args").value = JSON.stringify(p.args); $("ctx").value = p.context;
+      runInspect();
     };
-    for (const id of ["inspect", "demo", "eval"]) $(id).disabled = false;
-    status(`Ready: ${wheel} on Python ${py.runPython("import sys; sys.version.split()[0]")} (Pyodide), running in this tab.`);
+    for (const id of ["preset", "inspect", "demo"]) $(id).disabled = false;
+    const version = py.runPython("import sys; sys.version.split()[0]");
+    $("runtime").classList.add("ready");
+    say(`Python ${version}, in this tab`);
+    runInspect();
+    showLedger(JSON.parse(py.globals.get("ledger_sample")()));
+    showMetrics(JSON.parse(py.globals.get("metrics")()));
   } catch (err) {
-    status("Could not start the Python runtime: " + err);
+    say("Python could not start");
+    $("verdict").replaceChildren(el("p", "reason", "The in-browser runtime failed to load (" + err + "). Try a recent Chrome, Firefox or Safari."));
   }
 }
 
-$("inspect").onclick = () => {
-  const fn = py.globals.get("inspect");
-  showVerdict(JSON.parse(fn($("tool").value, $("args").value, $("ctx").value)));
-};
+function showLedger(r) {
+  const short = (h) => h.slice(0, 4) + "…" + h.slice(-4);
+  const rows = [["seq", r.seq], ["event", r.event], ["tool", r.tool], ["score", r.score],
+                ["api_key", r.api_key], ["prev", short(r.prev)], ["mac", short(r.mac)], ["chain", r.valid ? "verified" : "broken"]];
+  const box = $("ledger-sample");
+  box.replaceChildren();
+  rows.forEach(([k, v], i) => { box.append(el("b", null, k), " " + v + (i % 2 ? "\n" : "   ")); });
+}
+
+function showMetrics(m) {
+  for (const n of document.querySelectorAll("#stats .num")) {
+    n.textContent = Math.round(m[n.dataset.k] * 100) + "%";
+    n.classList.remove("muted");
+  }
+  $("counts").firstChild.textContent = `${m.attacks} attack cases and ${m.benign} benign cases. The corpus is small and hand-written, so treat these as regression numbers. `;
+}
+
+$("inspect").onclick = runInspect;
 
 $("demo").onclick = async () => {
   const button = $("demo"), log = $("log");
   button.disabled = true;
-  log.hidden = false;
   log.replaceChildren();
+  $("outcome").textContent = "";
   py.globals.set("js_log", (line) => {
-    const div = document.createElement("div");
-    div.textContent = line;  // model and attacker text: never HTML
-    if (line.startsWith("[reviewer]")) div.className = "reviewer";
-    else if (line.startsWith("[human]")) div.className = "human";
-    else if (/REQUIRE_APPROVAL|BLOCK|rejected/.test(line)) div.className = "stop";
-    log.append(div);
+    let cls = null;
+    if (line.startsWith("[reviewer]")) cls = "reviewer";
+    else if (line.startsWith("[human]")) cls = "human";
+    else if (/REQUIRE_APPROVAL: Approval|rejected|BLOCK/.test(line)) cls = "stop";
+    else if (/approved, ran$/.test(line)) cls = "ok";
+    log.append(el("div", cls, line));  // agent and attacker text: never HTML
     log.scrollTop = log.scrollHeight;
   });
   try {
-    const result = await py.runPythonAsync(`
+    const r = JSON.parse(await py.runPythonAsync(`
 from sentinel.demo import ScriptedModel, run_demo
 async def human(req, review):
     return True
-r = await run_demo(ScriptedModel(), human, js_log)
-json.dumps(r)`);
-    const r = JSON.parse(result);
-    const div = document.createElement("div");
-    div.textContent = `\nOutbox: ${r.outbox.map((m) => m.to).join(", ") || "(nothing sent)"} · ` +
-      `${r.ledger_events.length} ledger events · ledger valid: ${r.ledger_valid}`;
-    log.append(div);
+json.dumps(await run_demo(ScriptedModel(), human, js_log))`));
+    const sent = r.outbox.map((m) => m.to).join(", ") || "nothing";
+    $("outcome").textContent = `Sent to ${sent}. The export to the attacker never left. ${r.ledger_events.length} ledger entries, chain ${r.ledger_valid ? "verified" : "BROKEN"}.`;
   } catch (err) {
-    log.append(Object.assign(document.createElement("div"), { textContent: "Error: " + err }));
+    $("outcome").textContent = "The demo failed: " + err;
   }
   button.disabled = false;
-};
-
-$("eval").onclick = () => {
-  const m = JSON.parse(py.globals.get("metrics")());
-  const pct = (x) => (x * 100).toFixed(0) + "%";
-  const rows = [
-    ["Attack cases", m.attacks], ["Flagged", pct(m.flagged_rate)],
-    ["Stopped on detector evidence alone", pct(m.detector_stop_rate)],
-    ["Stopped under default policy", pct(m.policy_stop_rate)],
-    ["Benign cases", m.benign], ["False positives", pct(m.false_positive_rate)],
-  ];
-  const table = document.createElement("table");
-  for (const [k, v] of rows) {
-    const tr = table.insertRow();
-    tr.insertCell().textContent = k;
-    tr.insertCell().textContent = v;
-  }
-  $("metrics").replaceChildren(table);
 };
 
 boot();
