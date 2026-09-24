@@ -31,7 +31,7 @@ def load_detectors(policy: PolicyEngine) -> list[Detector]:
     eps = sorted(entry_points(group=GROUP), key=lambda ep: ep.name)
     if not eps:
         # Fail closed: a gateway with no detectors would allow everything.
-        raise RuntimeError(f"No detectors registered under '{GROUP}'. Is sentinel-agent installed (pip install -e .)?")
+        raise RuntimeError(f"No detectors registered under '{GROUP}'. Is sentinel-agent-gateway installed?")
     return [ep.load()(policy) for ep in eps]
 
 

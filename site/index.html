@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SentinelAgent</title>
+<meta name="description" content="A deny-by-default security gateway for AI agents, running live in your browser.">
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --ink: #1c1917; --muted: #57534e; --line: #e7e5e4;
+    --accent: #0f766e; --allow: #15803d; --warn: #b45309; --stop: #b91c1c; --code: #f5f5f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0c0a09; --panel: #1c1917; --ink: #f5f5f4; --muted: #a8a29e; --line: #292524;
+            --accent: #2dd4bf; --allow: #4ade80; --warn: #fbbf24; --stop: #f87171; --code: #292524; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 1.15rem; margin: 0 0 4px; }
+  p { margin: 0 0 12px; }
+  .lede { color: var(--muted); max-width: 720px; }
+  .links a { color: var(--accent); margin-right: 16px; font-weight: 600; text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+  .status { margin: 20px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px;
+            background: var(--panel); color: var(--muted); font-size: 0.92rem; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+            padding: 20px; margin-top: 20px; }
+  .hint { color: var(--muted); font-size: 0.92rem; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin: 12px 0 4px; }
+  input, textarea, select { width: 100%; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
+         color: var(--ink); background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  textarea { resize: vertical; }
+  button { margin-top: 14px; font: 600 14px system-ui, sans-serif; color: #fff; background: var(--accent);
+           border: 0; border-radius: 6px; padding: 9px 16px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .badge { display: inline-block; font: 700 13px ui-monospace, monospace; padding: 3px 8px; border-radius: 4px;
+           color: #fff; }
+  .ALLOW { background: var(--allow); } .WARN_AND_ALLOW { background: var(--warn); }
+  .REQUIRE_APPROVAL, .BLOCK { background: var(--stop); }
+  pre, .log { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code);
+              border-radius: 6px; padding: 12px; margin: 12px 0 0; white-space: pre-wrap; word-break: break-word;
+              max-height: 420px; overflow: auto; }
+  .log div.reviewer { color: var(--warn); } .log div.human { color: var(--allow); }
+  .log div.stop { color: var(--stop); }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 0.92rem; }
+  td { padding: 6px 4px; border-bottom: 1px solid var(--line); } td:last-child { text-align: right; font-weight: 700; }
+  ul.findings { margin: 8px 0 0; padding-left: 18px; font-size: 0.9rem; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 0.88rem; }
+  code { font-family: ui-monospace, monospace; font-size: 0.92em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🛡️ SentinelAgent</h1>
+  <p class="lede">A deny-by-default security gateway for AI agents. It checks tool calls going out, guards tool
+  output coming back, and holds risky calls for a human. This page runs the real <code>sentinel</code> package
+  from <code>main</code> in your browser with Pyodide. No server, nothing leaves the page.</p>
+  <p class="links">
+    <a href="https://github.com/Chirudeva-Reddy/sentinel-agent">GitHub</a>
+    <a href="https://pypi.org/project/sentinel-agent-gateway/">PyPI</a>
+    <a href="https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+    <a href="https://github.com/Chirudeva-Reddy/sentinel-agent/blob/main/docs/BENCHMARKS.md">Benchmarks</a>
+  </p>
+  <div class="status" id="status">Loading the Python runtime…</div>
+
+  <section>
+    <h2>Try the gateway</h2>
+    <p class="hint">Pick an attack or benign call from the evaluation corpus, or write your own.</p>
+    <div class="grid">
+      <div>
+        <label for="preset">Preset</label>
+        <select id="preset"></select>
+        <label for="tool">Tool name</label>
+        <input id="tool" value="run_shell">
+        <label for="args">Arguments (JSON)</label>
+        <textarea id="args" rows="4">{"cmd": "rm -r -f /"}</textarea>
+        <label for="ctx">Context (optional)</label>
+        <textarea id="ctx" rows="2"></textarea>
+        <button id="inspect" disabled>Inspect</button>
+      </div>
+      <div id="verdict" class="hint">The decision will appear here.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Multi-agent demo</h2>
+    <p class="hint">A researcher agent and a mailer agent summarise a release-notes page that contains a hidden
+    instruction to email the customer list to an outside address. A reviewer agent screens every held call and
+    can only reject or escalate. The model turns are scripted here, and the researcher is written to fall for the
+    injection. Everything else (gateway, taint tracking, approvals, audit ledger) is the real code. Escalations are
+    auto-approved as the human.</p>
+    <button id="demo" disabled>Run the demo</button>
+    <div class="log" id="log" hidden></div>
+  </section>
+
+  <section>
+    <h2>Evaluation</h2>
+    <p class="hint">Runs <code>sentinel eval</code> on the bundled corpora: attacks and benign calls under the default policy.</p>
+    <button id="eval" disabled>Run evaluation</button>
+    <div id="metrics"></div>
+  </section>
+
+  <footer>
+    The approval API, the dashboard and the MCP proxy need a server. Run them with
+    <code>docker compose -f docker/docker-compose.yml up</code> or
+    <code>pip install "sentinel-agent-gateway[server,dashboard,mcp]"</code>.
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const status = (text) => { $("status").textContent = text; };
+let py;
+
+const SETUP = `
+import json, os
+os.environ["SENTINEL_HOME"] = "/tmp/sentinel"
+from sentinel.core.gateway import SentinelGateway
+from sentinel.core.types import ToolCallRequest
+from sentinel.eval import cases, evaluate
+from sentinel.sandbox.approval import ApprovalCoordinator, ApprovalStore
+gateway = SentinelGateway(approval_coordinator=ApprovalCoordinator(ApprovalStore(":memory:")))
+
+def presets():
+    out = []
+    for kind in ("attacks", "benign"):
+        for c in cases(kind):
+            out.append({"label": f"{kind[:-1] if kind == 'attacks' else 'benign'}: {c['id']}", "tool": c["tool"],
+                        "args": c.get("args", {}), "context": c.get("context") or ""})
+    return json.dumps(out)
+
+def inspect(tool, args_json, context):
+    try:
+        args = json.loads(args_json or "{}")
+    except ValueError as exc:
+        return json.dumps({"error": f"Arguments are not valid JSON: {exc}"})
+    if not isinstance(args, dict):
+        return json.dumps({"error": "Arguments must be a JSON object"})
+    a = gateway.inspect(ToolCallRequest(tool_name=tool, arguments=args, raw_prompt_context=context or None))
+    return a.model_dump_json()
+
+def metrics():
+    return json.dumps(evaluate().metrics)
+`;
+
+function badge(decision) {
+  const b = document.createElement("span");
+  b.className = "badge " + decision;
+  b.textContent = decision;
+  return b;
+}
+
+function showVerdict(a) {
+  const box = $("verdict");
+  box.replaceChildren();
+  box.className = "";
+  if (a.error) { box.textContent = a.error; return; }
+  const head = document.createElement("p");
+  head.append(badge(a.decision), ` score ${a.overall_score}/100 · ${a.tier} · ${a.latency_ms} ms`);
+  const reason = document.createElement("p");
+  reason.textContent = a.reason;
+  const list = document.createElement("ul");
+  list.className = "findings";
+  for (const f of a.findings) {
+    for (const m of f.matched_patterns) {
+      const li = document.createElement("li");
+      li.textContent = `${f.detector_name}: ${m}`;
+      list.append(li);
+    }
+  }
+  box.append(head, reason);
+  if (list.children.length) box.append(list);
+}
+
+async function boot() {
+  try {
+    py = await loadPyodide();
+    status("Loading pydantic and pyyaml…");
+    await py.loadPackage(["micropip", "pydantic", "pyyaml"]);
+    status("Installing the sentinel wheel…");
+    const wheel = (await (await fetch("wheels/latest.txt")).text()).trim();
+    const micropip = py.pyimport("micropip");
+    await micropip.install(new URL("wheels/" + wheel, location.href).href, { deps: false });
+    await py.runPythonAsync(SETUP);
+    const presets = JSON.parse(py.globals.get("presets")());
+    const select = $("preset");
+    select.append(Object.assign(document.createElement("option"), { value: "", textContent: "custom (edit the fields below)" }));
+    presets.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p.label; select.append(o); });
+    select.onchange = () => {
+      if (select.value === "") return;
+      const p = presets[select.value];
+      $("tool").value = p.tool; $("args").value = JSON.stringify(p.args, null, 1); $("ctx").value = p.context;
+    };
+    for (const id of ["inspect", "demo", "eval"]) $(id).disabled = false;
+    status(`Ready: ${wheel} on Python ${py.runPython("import sys; sys.version.split()[0]")} (Pyodide), running in this tab.`);
+  } catch (err) {
+    status("Could not start the Python runtime: " + err);
+  }
+}
+
+$("inspect").onclick = () => {
+  const fn = py.globals.get("inspect");
+  showVerdict(JSON.parse(fn($("tool").value, $("args").value, $("ctx").value)));
+};
+
+$("demo").onclick = async () => {
+  const button = $("demo"), log = $("log");
+  button.disabled = true;
+  log.hidden = false;
+  log.replaceChildren();
+  py.globals.set("js_log", (line) => {
+    const div = document.createElement("div");
+    div.textContent = line;  // model and attacker text: never HTML
+    if (line.startsWith("[reviewer]")) div.className = "reviewer";
+    else if (line.startsWith("[human]")) div.className = "human";
+    else if (/REQUIRE_APPROVAL|BLOCK|rejected/.test(line)) div.className = "stop";
+    log.append(div);
+    log.scrollTop = log.scrollHeight;
+  });
+  try {
+    const result = await py.runPythonAsync(`
+from sentinel.demo import ScriptedModel, run_demo
+async def human(req, review):
+    return True
+r = await run_demo(ScriptedModel(), human, js_log)
+json.dumps(r)`);
+    const r = JSON.parse(result);
+    const div = document.createElement("div");
+    div.textContent = `\nOutbox: ${r.outbox.map((m) => m.to).join(", ") || "(nothing sent)"} · ` +
+      `${r.ledger_events.length} ledger events · ledger valid: ${r.ledger_valid}`;
+    log.append(div);
+  } catch (err) {
+    log.append(Object.assign(document.createElement("div"), { textContent: "Error: " + err }));
+  }
+  button.disabled = false;
+};
+
+$("eval").onclick = () => {
+  const m = JSON.parse(py.globals.get("metrics")());
+  const pct = (x) => (x * 100).toFixed(0) + "%";
+  const rows = [
+    ["Attack cases", m.attacks], ["Flagged", pct(m.flagged_rate)],
+    ["Stopped on detector evidence alone", pct(m.detector_stop_rate)],
+    ["Stopped under default policy", pct(m.policy_stop_rate)],
+    ["Benign cases", m.benign], ["False positives", pct(m.false_positive_rate)],
+  ];
+  const table = document.createElement("table");
+  for (const [k, v] of rows) {
+    const tr = table.insertRow();
+    tr.insertCell().textContent = k;
+    tr.insertCell().textContent = v;
+  }
+  $("metrics").replaceChildren(table);
+};
+
+boot();
+</script>
+</body>
+</html>
